@@ -1,15 +1,20 @@
 # OfflineTunes
 
-OfflineTunes is a Windows music player for local files and audio links. It has a customizable floating widget and supports looping video backgrounds in the player and widget.
+OfflineTunes is a Windows music player for local files, full tracks from Audius and Wikimedia Commons, and audio links. It has a floating widget with its own video or photo background.
 
 ## Install
 
 Download the Windows x64 installer from [Releases](https://github.com/ararat-hub/OfflineTunes/releases). YouTube playback uses Microsoft Edge WebView2 Runtime.
 
 - Use **Add** to scan a music folder or play an audio or YouTube link.
-- Use **Settings → Appearance** to pick a preset, import your own video, or customize the floating widget. Imported videos stay on your PC at their original quality.
-- Use **Settings → Language** to select Russian, English, or Spanish.
+- **Search** finds music in your library, public streams on Audius, and openly licensed recordings on Wikimedia Commons. Online results link to their sources.
+- **Library** includes a recently played list. **Discover** suggests music based on artists and genres in your recent plays and favorites, and offers genre searches in the open catalogue.
+- **Downloads** previews a section planned for the mobile version.
+- Use **Settings → Appearance** to import video, photos, and TTF or OTF fonts. Choose a saved background and video loop range separately for the player and floating widget.
+- Use **Settings → Sound** to set the equalizer for audio tracks.
+- Use **Settings → Language** to select Russian, English, Spanish, German, or French.
 - Use **Settings → Shortcuts** to enable and change global Windows shortcuts for playback, volume, and the floating widget.
+- **Settings → Updates** checks for newer GitHub releases and lets you turn automatic prompts on or off.
 
 YouTube links play in the official embedded player when available. If YouTube returns error 101 or 150, OfflineTunes opens the video's standard YouTube watch page inside the app. On that page use the YouTube playback controls. Access still depends on YouTube's availability, account requirements, and regional restrictions.
 

@@ -10,10 +10,10 @@ Unicode true
   !define OUTPUT_DIR "."
 !endif
 !ifndef APP_VERSION
-  !define APP_VERSION "1.3.0"
+  !define APP_VERSION "1.4.0"
 !endif
 !ifndef FILE_VERSION
-  !define FILE_VERSION "1.3.0.3"
+  !define FILE_VERSION "1.4.0.4"
 !endif
 
 Name "OfflineTunes"

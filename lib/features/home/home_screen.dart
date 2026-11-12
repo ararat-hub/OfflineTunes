@@ -5,9 +5,11 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../data/db/app_database.dart';
+import '../../data/models/media_link.dart';
 import '../../data/services/app_preferences.dart';
 import '../../data/services/audio_player_service.dart';
 import '../../data/services/desktop_window_service.dart';
+import '../../data/services/update_service.dart';
 import '../../data/services/youtube_player_service.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/app_backdrop.dart';
@@ -15,16 +17,19 @@ import '../../widgets/appearance_editor.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/player_controls.dart';
 import '../../widgets/youtube_panel.dart';
+import '../../widgets/update_controls.dart';
 import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
 import '../profile/profile_screen.dart';
 import '../favorites/favorites_screen.dart';
 import '../add_music/add_music_screen.dart';
 import '../library/library_screen.dart';
+import '../discover/discover_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AppDatabase db;
-  const HomeScreen({super.key, required this.db});
+  final MediaLink? initialLink;
+  const HomeScreen({super.key, required this.db, this.initialLink});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -40,8 +45,53 @@ class _HomeScreenState extends State<HomeScreen> {
     'Избранное',
     'Добавить музыку',
     'Настройки',
-    'Ваш профиль'
+    'Ваш профиль',
+    'Рекомендации',
+    'Загрузки',
   ];
+  static const _navigation = [
+    (0, Icons.home_outlined, Icons.home, 'Главная'),
+    (1, Icons.search, Icons.search, 'Поиск'),
+    (2, Icons.library_music_outlined, Icons.library_music, 'Медиатека'),
+    (3, Icons.favorite_border, Icons.favorite, 'Избранное'),
+    (7, Icons.explore_outlined, Icons.explore, 'Подборки'),
+    (8, Icons.download_outlined, Icons.download, 'Загрузки'),
+    (4, Icons.add_circle_outline, Icons.add_circle, 'Добавить'),
+    (5, Icons.settings_outlined, Icons.settings, 'Настройки'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final link = widget.initialLink;
+    if (link != null) _selectedIndex = 4;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (link?.isYoutube == true) {
+        unawaited(context.read<YoutubePlayerService>().open(link!));
+      } else if (link != null) {
+        unawaited(context
+            .read<AudioPlayerService>()
+            .playUrl(link.uri.toString(), title: link.uri.pathSegments.last));
+      } else {
+        unawaited(_checkUpdates());
+      }
+    });
+  }
+
+  Future<void> _checkUpdates() async {
+    try {
+      final update = await context.read<UpdateService?>()?.check();
+      if (mounted &&
+          update != null &&
+          !context.read<DesktopWindowService>().compact) {
+        await showUpdate(context, update);
+      }
+    } catch (error) {
+      debugPrint('Check for updates: $error');
+    }
+  }
+
   void _navigate(int index) => setState(() => _selectedIndex = index);
   Future<void> _editFromWidget() async {
     await context.read<DesktopWindowService>().restore();
@@ -108,6 +158,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final window = context.watch<DesktopWindowService>();
     final youtube = context.watch<YoutubePlayerService>();
     final fullWatchPage = youtube.watchPage && _selectedIndex == 4;
+    final navigationIndex =
+        _navigation.indexWhere((item) => item.$1 == _selectedIndex);
     final pages = [
       _Dashboard(onNavigate: _navigate),
       SearchScreen(db: widget.db),
@@ -116,6 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
       const AddMusicScreen(),
       const SettingsScreen(),
       const ProfileScreen(),
+      DiscoverScreen(db: widget.db),
+      const DownloadsScreen(),
     ];
     return Scaffold(
         backgroundColor: Colors.transparent,
@@ -154,40 +208,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child: NavigationRail(
                         backgroundColor: Colors.transparent,
                         selectedIndex:
-                            _selectedIndex < 6 ? _selectedIndex : null,
+                            navigationIndex < 0 ? null : navigationIndex,
                         labelType: NavigationRailLabelType.all,
                         groupAlignment: -1,
-                        onDestinationSelected: _navigate,
+                        onDestinationSelected: (index) =>
+                            _navigate(_navigation[index].$1),
                         destinations: [
-                          NavigationRailDestination(
-                              icon: Icon(Icons.home_outlined),
-                              selectedIcon: Icon(Icons.home),
-                              label: Text(context.tr('Главная'),
-                                  style: TextStyle(fontSize: 11))),
-                          NavigationRailDestination(
-                              icon: Icon(Icons.search),
-                              label: Text(context.tr('Поиск'),
-                                  style: TextStyle(fontSize: 11))),
-                          NavigationRailDestination(
-                              icon: Icon(Icons.library_music_outlined),
-                              selectedIcon: Icon(Icons.library_music),
-                              label: Text(context.tr('Медиатека'),
-                                  style: TextStyle(fontSize: 11))),
-                          NavigationRailDestination(
-                              icon: Icon(Icons.favorite_border),
-                              selectedIcon: Icon(Icons.favorite),
-                              label: Text(context.tr('Избранное'),
-                                  style: TextStyle(fontSize: 11))),
-                          NavigationRailDestination(
-                              icon: Icon(Icons.add_circle_outline),
-                              selectedIcon: Icon(Icons.add_circle),
-                              label: Text(context.tr('Добавить'),
-                                  style: TextStyle(fontSize: 11))),
-                          NavigationRailDestination(
-                              icon: Icon(Icons.settings_outlined),
-                              selectedIcon: Icon(Icons.settings),
-                              label: Text(context.tr('Настройки'),
-                                  style: TextStyle(fontSize: 11))),
+                          for (final destination in _navigation)
+                            NavigationRailDestination(
+                              icon: Icon(destination.$2),
+                              selectedIcon: Icon(destination.$3),
+                              label: Text(context.tr(destination.$4),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11)),
+                            ),
                         ],
                       )))),
                       PlayerControlButton(

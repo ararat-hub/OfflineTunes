@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../core/localization.dart';
 import '../../data/services/app_preferences.dart';
 import '../../widgets/appearance_editor.dart';
+import '../../widgets/sound_settings.dart';
+import '../../widgets/update_controls.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,7 +18,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final labels = ['Оформление', 'Язык', 'Горячие клавиши'];
+    final labels = [
+      'Оформление',
+      'Звук',
+      'Язык',
+      'Горячие клавиши',
+      'Обновления'
+    ];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
@@ -38,8 +46,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           key: ValueKey(_section),
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
           child: switch (_section) {
-            1 => const _LanguageSettings(),
-            2 => const _HotkeySettings(),
+            1 => const SoundSettings(),
+            2 => const _LanguageSettings(),
+            3 => const _HotkeySettings(),
+            4 => const UpdateControls(),
             _ => const AppearanceEditor(),
           },
         ),

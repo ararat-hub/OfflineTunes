@@ -13,7 +13,13 @@ class AppPreferences extends ChangeNotifier {
   AppPreferences(this._prefs, {bool? windows})
       : supportsHotkeys = windows ?? Platform.isWindows;
 
-  static const languages = {'ru': 'Русский', 'en': 'English', 'es': 'Español'};
+  static const languages = {
+    'ru': 'Русский',
+    'en': 'English',
+    'es': 'Español',
+    'de': 'Deutsch',
+    'fr': 'Français',
+  };
   static const _channel = MethodChannel('offlinetunes/hotkeys');
   static const _defaultKeys = [0x50, 0x4E, 0x42, 0x4D, 0x57];
   static const keyChoices = <int>[

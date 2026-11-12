@@ -6,11 +6,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_windows/webview_windows.dart';
 import '../models/media_link.dart';
+import '../models/playback_track.dart';
 import 'audio_player_service.dart';
 
 class YoutubePlayerService extends ChangeNotifier {
   static const appId = 'io.github.ararat-hub.offlinetunes';
+  static Future<void>? _environment;
   final AudioPlayerService audio;
+  final ValueChanged<PlaybackTrack>? onListened;
   WebviewController? controller;
   Future<void>? _initializing;
   StreamSubscription<dynamic>? _messages;
@@ -23,13 +26,14 @@ class YoutubePlayerService extends ChangeNotifier {
   bool watchPage = false;
   bool _starting = false;
   bool _disposed = false;
+  bool _recorded = false;
   int _generation = 0;
   String? error;
   String title = 'YouTube';
   MediaLink? link;
   bool get initialized => controller?.value.isInitialized ?? false;
 
-  YoutubePlayerService(this.audio) {
+  YoutubePlayerService(this.audio, {this.onListened}) {
     audio.addListener(_audioChanged);
   }
   void _notify() {
@@ -48,6 +52,7 @@ class YoutubePlayerService extends ChangeNotifier {
     active = true;
     loading = true;
     playing = false;
+    _recorded = false;
     watchPage = false;
     error = null;
     title = 'YouTube · ${media.youtubeId}';
@@ -92,10 +97,17 @@ class YoutubePlayerService extends ChangeNotifier {
     if (await WebviewController.getWebViewVersion() == null) {
       throw const _WebViewUnavailable();
     }
-    final folder = Directory(p.join(
-        (await getApplicationSupportDirectory()).path, 'youtube_player'));
+    final support = await getApplicationSupportDirectory();
+    final folder = Directory(p.join(support.path, 'youtube_player'));
     await folder.create(recursive: true);
     await File(p.join(folder.path, 'player.html')).writeAsString(playerHtml);
+    try {
+      await (_environment ??= WebviewController.initializeEnvironment(
+          userDataPath: p.join(support.path, 'youtube_webview')));
+    } catch (_) {
+      _environment = null;
+      rethrow;
+    }
     if (_disposed) return;
     final web = WebviewController();
     controller = web;
@@ -160,10 +172,23 @@ class YoutubePlayerService extends ChangeNotifier {
           unawaited(audio.pause());
         }
         break;
+      case 'played':
+        final media = link;
+        if (!_recorded && playing && media != null) {
+          _recorded = true;
+          debugPrint('YouTube embedded playback advanced.');
+          onListened?.call(PlaybackTrack(
+              path: media.canonicalYoutubeUrl.toString(),
+              title: title,
+              artist: 'YouTube',
+              youtube: true));
+        }
+        return;
       case 'error':
         loading = false;
         playing = false;
         final code = value['code'] is int ? value['code'] as int : 0;
+        debugPrint('YouTube embed error: $code');
         _timeout?.cancel();
         if (requiresWatchPage(code)) {
           unawaited(openWatchPage());
@@ -285,8 +310,19 @@ window.onYouTubeIframeAPIReady = function(){
   window.player = new YT.Player('player', {
     width:'100%',height:'100%',videoId:video,
     playerVars:{autoplay:1,controls:1,playsinline:1,start:start,origin:location.origin,rel:0},
-    events:{onReady:function(e){emit({type:'ready'});e.target.playVideo();},
-      onStateChange:function(e){let name='';try{name=e.target.getVideoData().title||'';}catch(_){}emit({type:'state',state:e.data,title:name});},
+    events:{onReady:function(){emit({type:'ready'});},
+      onStateChange:function(e){
+        let name='';try{name=e.target.getVideoData().title||'';}catch(_){}
+        emit({type:'state',state:e.data,title:name});
+        clearTimeout(window.listenTimer);
+        if(e.data===YT.PlayerState.PLAYING){
+          const initial=e.target.getCurrentTime();
+          window.listenTimer=setTimeout(function(){
+            if(e.target.getPlayerState()===YT.PlayerState.PLAYING &&
+               e.target.getCurrentTime()>initial+0.5) emit({type:'played'});
+          },1600);
+        }
+      },
       onError:function(e){emit({type:'error',code:e.data});},
       onAutoplayBlocked:function(){emit({type:'blocked'});}}
   });

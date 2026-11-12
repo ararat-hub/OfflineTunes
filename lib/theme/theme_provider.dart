@@ -2,14 +2,26 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 enum BackgroundType { color, image, video, ambient }
 
 enum WidgetStyle { glass, solid, minimal }
+
+typedef VideoLoop = ({int from, int? to});
+
+class AppearanceFile {
+  const AppearanceFile(this.path, this.name);
+  final String path;
+  final String name;
+
+  Map<String, String> toJson() => {'path': path, 'name': name};
+}
 
 class AppearancePreset {
   final String id, name, description;
@@ -21,6 +33,8 @@ class AppearancePreset {
 
 class ThemeProvider extends ChangeNotifier {
   static const videoExtensions = ['mp4', 'mkv', 'mov', 'webm', 'm4v'];
+  static const imageExtensions = ['jpg', 'jpeg', 'png', 'webp'];
+  static const fontExtensions = ['ttf', 'otf'];
   static const defaultProfileName = 'Мой профиль';
   static const defaultProfileBio = 'Музыка под ваше настроение';
   static const fonts = [
@@ -89,6 +103,13 @@ class ThemeProvider extends ChangeNotifier {
     'mediaPath': '',
     'importedVideoPath': '',
     'importedVideoName': '',
+    'savedBackgrounds': '',
+    'savedFonts': '',
+    'widgetMediaPath': '',
+    'loopFrom': 0,
+    'loopTo': 0,
+    'widgetLoopFrom': 0,
+    'widgetLoopTo': 0,
     'backgroundColor': 0xFF071E26,
     'accent': 0xFF75E1C4,
     'font': 'System',
@@ -118,6 +139,8 @@ class ThemeProvider extends ChangeNotifier {
   bool _disposed = false;
   (Color, Color, String)? _themeInputs;
   ThemeData? _theme;
+  final _loadedFonts = <String>{};
+  final _backgroundDurations = <String, Duration>{};
 
   ThemeProvider() {
     ready = _load();
@@ -137,6 +160,92 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   String get importedVideoName => _settings['importedVideoName'] as String;
+  String? get widgetMediaPath {
+    final path = _settings['widgetMediaPath'] as String;
+    return path.isEmpty ? null : path;
+  }
+
+  String? mediaPath({required bool compact}) =>
+      compact && widgetMediaPath != null
+          ? widgetMediaPath
+          : backgroundImagePath;
+
+  BackgroundType backgroundType({required bool compact}) =>
+      compact && widgetMediaPath != null
+          ? (_isVideo(widgetMediaPath!)
+              ? BackgroundType.video
+              : BackgroundType.image)
+          : bgType;
+
+  VideoLoop videoLoop({required bool compact}) {
+    final widgetUsesOwnMedia = compact && widgetMediaPath != null;
+    final from =
+        _settings[widgetUsesOwnMedia ? 'widgetLoopFrom' : 'loopFrom'] as int;
+    final to = _settings[widgetUsesOwnMedia ? 'widgetLoopTo' : 'loopTo'] as int;
+    final duration = _backgroundDurations[mediaPath(compact: compact)];
+    if (duration != null && Duration(seconds: from) >= duration) {
+      return (from: 0, to: null);
+    }
+    return (
+      from: from,
+      to: to > from && (duration == null || Duration(seconds: to) < duration)
+          ? to
+          : null
+    );
+  }
+
+  Duration? backgroundDuration(String? path) => _backgroundDurations[path];
+
+  void noteBackgroundDuration(String path, Duration duration) {
+    if (_disposed ||
+        duration <= Duration.zero ||
+        _backgroundDurations[path] == duration) {
+      return;
+    }
+    _backgroundDurations[path] = duration;
+    notifyListeners();
+  }
+
+  Future<void> setVideoLoop(VideoLoop loop, {required bool compact}) => change({
+        if (compact) 'widgetLoopFrom': loop.from else 'loopFrom': loop.from,
+        if (compact) 'widgetLoopTo': loop.to ?? 0 else 'loopTo': loop.to ?? 0,
+      });
+
+  List<AppearanceFile> get savedBackgrounds {
+    final files = _files('savedBackgrounds');
+    if (importedVideoPath != null &&
+        files.every((item) => item.path != importedVideoPath)) {
+      files.add(AppearanceFile(importedVideoPath!, importedVideoName));
+    }
+    return files;
+  }
+
+  List<AppearanceFile> get savedFonts => _files('savedFonts');
+  static String fontId(AppearanceFile file) =>
+      'file-${p.basenameWithoutExtension(file.path)}';
+
+  List<AppearanceFile> _files(String key) {
+    try {
+      final raw = _settings[key] as String;
+      if (raw.isEmpty) return [];
+      final rows = jsonDecode(raw) as List;
+      return [
+        for (final row in rows.whereType<Map>())
+          if (row['path'] is String && row['name'] is String)
+            AppearanceFile(row['path'] as String, row['name'] as String),
+      ];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  String backgroundName(String path) {
+    for (final file in savedBackgrounds) {
+      if (file.path == path) return file.name;
+    }
+    return p.basename(path);
+  }
+
   Color get backgroundColor => Color(_settings['backgroundColor'] as int);
   Color get accent => Color(_settings['accent'] as int);
   String get fontFamily => _settings['font'] as String;
@@ -176,9 +285,14 @@ class ThemeProvider extends ChangeNotifier {
         scaffoldBackgroundColor: inputs.$2,
         fontFamily: 'Segoe UI');
     final theme = base.copyWith(
-      textTheme: inputs.$3 == 'System'
-          ? base.textTheme
-          : GoogleFonts.getTextTheme(inputs.$3, base.textTheme),
+      textTheme: switch (inputs.$3) {
+        'System' => base.textTheme,
+        final family when _loadedFonts.contains(family) =>
+          base.textTheme.apply(fontFamily: family),
+        final family when fonts.contains(family) =>
+          GoogleFonts.getTextTheme(family, base.textTheme),
+        _ => base.textTheme,
+      },
       inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: Colors.black.withValues(alpha: .2),
@@ -213,7 +327,24 @@ class ThemeProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Не удалось загрузить оформление: $e');
     }
-    if (importedVideoPath != null) await _removeUnusedVideos();
+    final legacyMedia = backgroundImagePath;
+    if (legacyMedia != null &&
+        !legacyMedia.startsWith('asset:///') &&
+        savedBackgrounds.every((file) => file.path != legacyMedia)) {
+      _settings['savedBackgrounds'] = jsonEncode([
+        AppearanceFile(legacyMedia, p.basename(legacyMedia)).toJson(),
+        ...savedBackgrounds.map((file) => file.toJson()),
+      ]);
+    }
+    if (!fonts.contains(fontFamily)) {
+      try {
+        await _loadFont(
+            savedFonts.firstWhere((file) => fontId(file) == fontFamily));
+      } catch (error) {
+        debugPrint('Restore custom font: $error');
+        _settings['font'] = 'System';
+      }
+    }
     if (!_disposed) notifyListeners();
   }
 
@@ -246,7 +377,18 @@ class ThemeProvider extends ChangeNotifier {
       _settings[entry.key] = (_settings[entry.key] as double)
           .clamp(entry.value[0], entry.value[1]);
     }
-    if (!fonts.contains(fontFamily)) _settings['font'] = 'System';
+    for (final key in [
+      'loopFrom',
+      'loopTo',
+      'widgetLoopFrom',
+      'widgetLoopTo'
+    ]) {
+      _settings[key] = (_settings[key] as int).clamp(0, 86400);
+    }
+    if (!fonts.contains(fontFamily) &&
+        !savedFonts.any((file) => fontId(file) == fontFamily)) {
+      _settings['font'] = 'System';
+    }
     if (!presets.any((p) => p.id == presetId)) {
       _settings['preset'] = presets.first.id;
     }
@@ -306,60 +448,115 @@ class ThemeProvider extends ChangeNotifier {
       change({'backgroundType': type.name});
   Future<void> setBackgroundColor(Color color) =>
       change({'backgroundColor': color.toARGB32(), 'backgroundType': 'color'});
-  Future<void> setFontFamily(String font) => change({'font': font});
+  Future<void> setFontFamily(String font) async {
+    if (!fonts.contains(font)) {
+      await _loadFont(savedFonts.firstWhere((file) => fontId(file) == font));
+    }
+    await change({'font': font});
+  }
+
   Future<void> setBackgroundImage(String? path) => setBackgroundImagePath(path);
   Future<void> setBackgroundImagePath(String? path) => change({
         'mediaPath': path ?? '',
+        if (path != backgroundImagePath) 'loopFrom': 0,
+        if (path != backgroundImagePath) 'loopTo': 0,
         'backgroundType':
             path == null ? 'ambient' : (_isVideo(path) ? 'video' : 'image')
+      });
+  Future<void> setWidgetBackground(String? path) => change({
+        'widgetMediaPath': path ?? '',
+        if (path != widgetMediaPath) 'widgetLoopFrom': 0,
+        if (path != widgetMediaPath) 'widgetLoopTo': 0,
       });
   static bool _isVideo(String path) => videoExtensions
       .contains(p.extension(path).replaceFirst('.', '').toLowerCase());
 
-  Future<Directory> _videoFolder() async => Directory(p.join(
-      (await getApplicationSupportDirectory()).path, 'video_backgrounds'));
-
   Future<void> importBackgroundVideo(String path,
-      {Directory? directory}) async {
+      {Directory? directory, bool compact = false}) async {
+    if (!_isVideo(path)) throw const FormatException('Expected a video file');
+    await importBackground(path, compact: compact, directory: directory);
+  }
+
+  Future<void> importBackground(String path,
+      {required bool compact, Directory? directory}) async {
     await ready;
-    final source = File(path);
-    if (!_isVideo(path) || await source.length() == 0) {
-      throw const FormatException('Выберите непустой видеофайл.');
+    final copied = await _copyFile(
+        path, [...imageExtensions, ...videoExtensions], 'saved_backgrounds',
+        directory: directory);
+    await change({
+      'savedBackgrounds': jsonEncode(
+          [copied.toJson(), ...savedBackgrounds.map((file) => file.toJson())]),
+      if (_isVideo(copied.path)) 'importedVideoPath': copied.path,
+      if (_isVideo(copied.path)) 'importedVideoName': copied.name,
+      if (compact) ...{
+        'widgetMediaPath': copied.path,
+        'widgetLoopFrom': 0,
+        'widgetLoopTo': 0,
+      } else ...{
+        'mediaPath': copied.path,
+        'loopFrom': 0,
+        'loopTo': 0,
+        'backgroundType': _isVideo(copied.path) ? 'video' : 'image',
+      },
+    });
+  }
+
+  Future<void> importFont(String path, {Directory? directory}) async {
+    await ready;
+    if (await File(path).length() > 32 * 1024 * 1024) {
+      throw const FormatException('Font exceeds 32 MB');
     }
-    final folder = directory ?? await _videoFolder();
+    final copied =
+        await _copyFile(path, fontExtensions, 'fonts', directory: directory);
+    try {
+      await _loadFont(copied);
+    } catch (_) {
+      await File(copied.path).delete();
+      rethrow;
+    }
+    await change({
+      'savedFonts': jsonEncode(
+          [...savedFonts.map((file) => file.toJson()), copied.toJson()]),
+      'font': fontId(copied),
+    });
+  }
+
+  Future<void> _loadFont(AppearanceFile file) async {
+    final id = fontId(file);
+    if (_loadedFonts.contains(id)) return;
+    final bytes = await File(file.path).readAsBytes();
+    if (bytes.length < 12) throw const FormatException('Invalid font file');
+    final header = ByteData.sublistView(bytes).getUint32(0);
+    if (header != 0x00010000 && header != 0x4f54544f) {
+      throw const FormatException('Expected a TTF or OTF font');
+    }
+    final loader = FontLoader(id)
+      ..addFont(Future.value(ByteData.sublistView(bytes)));
+    await loader.load();
+    _loadedFonts.add(id);
+  }
+
+  Future<AppearanceFile> _copyFile(
+      String path, List<String> extensions, String storage,
+      {Directory? directory}) async {
+    final extension = p.extension(path).toLowerCase();
+    final source = File(path);
+    if (!extensions.contains(extension.replaceFirst('.', '')) ||
+        await source.length() == 0) {
+      throw const FormatException('Invalid appearance file');
+    }
+    final folder = directory ??
+        Directory(
+            p.join((await getApplicationSupportDirectory()).path, storage));
     await folder.create(recursive: true);
-    final target = p.join(folder.path,
-        'background-${DateTime.now().microsecondsSinceEpoch}${p.extension(path).toLowerCase()}');
+    final target = p.join(folder.path, '${const Uuid().v4()}$extension');
     final temporary = File('$target.part');
     try {
       await source.copy(temporary.path);
       await temporary.rename(target);
-      await change({
-        'importedVideoPath': target,
-        'importedVideoName': p.basename(path),
-        'mediaPath': target,
-        'backgroundType': BackgroundType.video.name,
-      });
+      return AppearanceFile(target, p.basename(path));
     } finally {
       if (await temporary.exists()) await temporary.delete();
-    }
-  }
-
-  Future<void> _removeUnusedVideos() async {
-    try {
-      final folder = await _videoFolder();
-      if (!await folder.exists()) return;
-      await for (final file in folder.list(followLinks: false)) {
-        if (file is File &&
-            RegExp(r'^background-\d+\.(mp4|mkv|mov|webm|m4v)(\.part)?$')
-                .hasMatch(p.basename(file.path)) &&
-            file.path != importedVideoPath &&
-            file.path != backgroundImagePath) {
-          await file.delete();
-        }
-      }
-    } catch (e) {
-      debugPrint('Background video cleanup: $e');
     }
   }
 
@@ -372,6 +569,8 @@ class ThemeProvider extends ChangeNotifier {
       'avatar': avatarPath ?? '',
       'importedVideoPath': importedVideoPath ?? '',
       'importedVideoName': importedVideoName,
+      'savedBackgrounds': _settings['savedBackgrounds'],
+      'savedFonts': _settings['savedFonts'],
     });
   }
 

@@ -52,7 +52,8 @@ class MediaLink {
       }
       return MediaLink._(uri, id, seconds.clamp(0, 604800));
     }
-    if (RegExp(r'\.(mp3|flac|m4a|aac|wav|ogg|opus|m3u8)$', caseSensitive: false)
+    if (RegExp(r'\.(mp3|flac|m4a|aac|wav|ogg|oga|opus|m3u8)$',
+            caseSensitive: false)
         .hasMatch(uri.path)) {
       return MediaLink._(uri, null, 0);
     }

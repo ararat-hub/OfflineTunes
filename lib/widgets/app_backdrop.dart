@@ -26,9 +26,11 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   Player? _player;
   VideoController? _video;
   StreamSubscription<String>? _errors;
+  StreamSubscription<Duration>? _durations;
   String? _error;
   String? _path;
-  (String?, bool) _requestedVideo = (null, false);
+  VideoLoop? _loadedLoop;
+  (String?, bool, VideoLoop?) _requestedVideo = (null, false, null);
   Future<void> _operations = Future.value();
   bool _minimized = false;
 
@@ -47,8 +49,9 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
 
   void _sync() {
     final theme = widget.theme;
+    final backgroundType = theme.backgroundType(compact: widget.compact);
     final animate = theme.motion && !_minimized;
-    if (animate && theme.bgType == BackgroundType.ambient) {
+    if (animate && backgroundType == BackgroundType.ambient) {
       _ambientTime.start();
       _ambientTimer ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
         final period = _ambientPeriod.inMilliseconds;
@@ -60,9 +63,11 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
       _ambientTimer = null;
       _ambientTime.stop();
     }
-    final path =
-        theme.bgType == BackgroundType.video ? theme.backgroundImagePath : null;
-    final request = (path, path != null && animate);
+    final path = backgroundType == BackgroundType.video
+        ? theme.mediaPath(compact: widget.compact)
+        : null;
+    final loop = path == null ? null : theme.videoLoop(compact: widget.compact);
+    final request = (path, path != null && animate, loop);
     if (_requestedVideo == request) return;
     _requestedVideo = request;
     _operations = _operations.then((_) async {
@@ -72,7 +77,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
           await _releaseVideo();
           return;
         }
-        if (_path != path) {
+        if (_path != path || _loadedLoop != loop) {
           if (!path.startsWith('asset:///') && !await File(path).exists()) {
             throw const FileSystemException('Видеофайл перемещён или удалён');
           }
@@ -90,11 +95,29 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
                   _error = 'Видеофон недоступен. Выберите файл в оформлении.');
             }
           });
+          _durations ??= _player!.stream.duration.listen((duration) {
+            final source = _requestedVideo.$1;
+            final playlist = _player?.state.playlist.medias;
+            if (mounted &&
+                source != null &&
+                playlist?.length == 1 &&
+                playlist!.first.uri == Media(source).uri) {
+              widget.theme.noteBackgroundDuration(source, duration);
+            }
+          });
           setState(() => _error = null);
           await _player!.setVolume(0);
           await _player!.setPlaylistMode(PlaylistMode.single);
-          await _player!.open(Media(path), play: _requestedVideo.$2);
+          await _player!.open(
+            Media(
+              path,
+              start: loop!.from > 0 ? Duration(seconds: loop.from) : null,
+              end: loop.to == null ? null : Duration(seconds: loop.to!),
+            ),
+            play: _requestedVideo.$2,
+          );
           _path = path;
+          _loadedLoop = loop;
         } else if (animate) {
           await _player!.play();
         } else {
@@ -114,14 +137,18 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   Future<void> _releaseVideo() async {
     final player = _player;
     final errors = _errors;
+    final durations = _durations;
     _player = null;
     _errors = null;
+    _durations = null;
     _path = null;
+    _loadedLoop = null;
     _video = null;
     _error = null;
     if (mounted && player != null) setState(() {});
     try {
       await errors?.cancel();
+      await durations?.cancel();
       await player?.dispose();
     } catch (e) {
       debugPrint('Не удалось освободить видеофон: $e');
@@ -152,14 +179,15 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final mediaPath = theme.backgroundImagePath;
+    final mediaPath = theme.mediaPath(compact: widget.compact);
+    final backgroundType = theme.backgroundType(compact: widget.compact);
     Widget background = CustomPaint(
         painter: _AmbientPainter(theme.preset.colors, _ambientPhase),
         size: Size.infinite);
-    if (theme.bgType == BackgroundType.color) {
+    if (backgroundType == BackgroundType.color) {
       background = ColoredBox(color: theme.backgroundColor);
     }
-    if (theme.bgType == BackgroundType.image && mediaPath != null) {
+    if (backgroundType == BackgroundType.image && mediaPath != null) {
       background = Image.file(File(mediaPath),
           fit: theme.backgroundFit,
           filterQuality: FilterQuality.high,
@@ -170,7 +198,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
                   child: Text(context.tr(
                       'Фоновое изображение недоступно. Выберите файл в оформлении.')))));
     }
-    if (theme.bgType == BackgroundType.video &&
+    if (backgroundType == BackgroundType.video &&
         _video != null &&
         _error == null) {
       background = Video(
@@ -194,7 +222,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
       ColoredBox(
           color: Colors.black
               .withValues(alpha: widget.compact ? theme.widgetDim : theme.dim)),
-      if (_error != null && theme.bgType == BackgroundType.video)
+      if (_error != null && backgroundType == BackgroundType.video)
         Positioned(
             left: 16,
             right: 16,

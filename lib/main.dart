@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'data/db/app_database.dart';
+import 'data/models/media_link.dart';
 import 'data/services/audio_player_service.dart';
+import 'data/services/listening_history.dart';
+import 'data/services/update_service.dart';
 import 'data/services/app_preferences.dart';
 import 'package:media_kit/media_kit.dart';
 import 'dart:io';
@@ -11,11 +14,10 @@ import 'package:window_manager/window_manager.dart';
 import 'data/services/desktop_window_service.dart';
 import 'data/services/youtube_player_service.dart';
 import 'data/services/network_service.dart';
-import 'data/services/music_api_service.dart'; // Импорт
 import 'theme/theme_provider.dart';
 import 'app.dart';
 
-void main() async {
+void main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   if (Platform.isWindows) {
@@ -26,27 +28,40 @@ void main() async {
 
   final db = AppDatabase();
   final theme = ThemeProvider();
-  final preferences = AppPreferences(await SharedPreferences.getInstance());
+  final prefs = await SharedPreferences.getInstance();
+  final preferences = AppPreferences(prefs);
   await preferences.initialize();
   await theme.ready;
+  MediaLink? initialLink;
+  if (arguments.isNotEmpty) {
+    try {
+      initialLink = MediaLink.parse(arguments.first);
+    } on FormatException {
+      // The application can be launched with a regular command-line flag.
+    }
+  }
 
   runApp(
     MultiProvider(
       providers: [
         Provider<AppDatabase>.value(value: db),
         ChangeNotifierProvider<AppPreferences>(create: (_) => preferences),
-        Provider<MusicApiService>(
-          create: (_) => MusicApiService(), // Добавили сервис API
-        ),
+        ChangeNotifierProvider(create: (_) => ListeningHistory(prefs)),
+        Provider(
+            create: (_) => UpdateService(prefs),
+            dispose: (_, updates) => updates.dispose()),
         ChangeNotifierProvider<AudioPlayerService>(
-          create: (_) => AudioPlayerService(),
+          create: (context) => AudioPlayerService(
+              onListened: context.read<ListeningHistory>().record),
         ),
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => theme,
         ),
         ChangeNotifierProvider<YoutubePlayerService>(
-            create: (context) =>
-                YoutubePlayerService(context.read<AudioPlayerService>())),
+            create: (context) => YoutubePlayerService(
+                  context.read<AudioPlayerService>(),
+                  onListened: context.read<ListeningHistory>().record,
+                )),
         ChangeNotifierProvider<DesktopWindowService>(
             create: (context) => DesktopWindowService(
                 onMinimize:
@@ -55,7 +70,7 @@ void main() async {
           create: (_) => NetworkService(),
         ),
       ],
-      child: const OfflinetunesApp(),
+      child: OfflinetunesApp(initialLink: initialLink),
     ),
   );
 }

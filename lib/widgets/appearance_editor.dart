@@ -2,6 +2,7 @@ import '../core/localization.dart';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../theme/theme_provider.dart';
 import '../data/services/desktop_window_service.dart';
@@ -17,43 +18,95 @@ class AppearanceEditor extends StatefulWidget {
 }
 
 class _AppearanceEditorState extends State<AppearanceEditor> {
+  static const _bundledVideo = 'asset:///assets/backgrounds/aurora-4k.mp4';
   bool _importing = false;
+  bool _widgetBackground = false;
 
-  Future<void> _pickPhoto(BuildContext context) async {
-    final file = await openFile(acceptedTypeGroups: [
-      XTypeGroup(
-          label: context.tr('Изображения'),
-          extensions: ['jpg', 'jpeg', 'png', 'webp'])
-    ]);
-    if (file == null || !context.mounted) return;
-    await context.read<ThemeProvider>().setBackgroundImagePath(file.path);
-  }
-
-  Future<void> _importVideo() async {
+  Future<void> _importFile(String label, List<String> extensions,
+      {bool font = false}) async {
     setState(() => _importing = true);
+    final compact = _widgetBackground;
     try {
       final file = await openFile(acceptedTypeGroups: [
-        XTypeGroup(
-            label: context.tr('Видеофайлы'),
-            extensions: ThemeProvider.videoExtensions)
+        XTypeGroup(label: context.tr(label), extensions: extensions),
       ]);
       if (file == null || !mounted) return;
-      await context.read<ThemeProvider>().importBackgroundVideo(file.path);
-    } catch (e) {
-      debugPrint('Background import: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(context.tr(
-                'Не удалось импортировать видео. Проверьте файл и свободное место.'))));
+      final theme = context.read<ThemeProvider>();
+      if (font) {
+        await theme.importFont(file.path);
+      } else {
+        await theme.importBackground(file.path, compact: compact);
       }
+    } catch (e) {
+      debugPrint('Appearance import: $e');
+      if (mounted) _fileError();
     } finally {
       if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  void _fileError() => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(context.tr('Не удалось открыть файл оформления.'))),
+      );
+
+  Future<void> _setFont(ThemeProvider theme, String font) async {
+    try {
+      await theme.setFontFamily(font);
+    } catch (error) {
+      if (mounted) _fileError();
+    }
+  }
+
+  Future<void> _setBackground(ThemeProvider theme, String? path) =>
+      _widgetBackground
+          ? theme.setWidgetBackground(path)
+          : theme.setBackgroundImagePath(path);
+
+  Future<void> _pickSaved(ThemeProvider theme) async {
+    final files = theme.savedBackgrounds;
+    final selection = await showDialog<AppearanceFile>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(context.tr('Сохранённые фоны')),
+        children: [
+          for (final file in files)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, file),
+              child:
+                  Text(file.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+      ),
+    );
+    if (selection != null && mounted) {
+      await _setBackground(theme, selection.path);
+    }
+  }
+
+  Future<void> _editLoop(ThemeProvider theme) async {
+    final compact = _widgetBackground;
+    final path = theme.mediaPath(compact: compact);
+    final duration = theme.backgroundDuration(path);
+    final selected = await showDialog<VideoLoop>(
+      context: context,
+      builder: (_) => _LoopDialog(
+          initial: theme.videoLoop(compact: compact),
+          maxSeconds: duration != null
+              ? (duration.inMilliseconds / 1000).ceil()
+              : (path == _bundledVideo ? 4 : 86400)),
+    );
+    if (selected != null && mounted) {
+      await theme.setVideoLoop(selected, compact: compact);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
+    final selectedMedia =
+        _widgetBackground ? theme.widgetMediaPath : theme.backgroundImagePath;
+    final loop = theme.videoLoop(compact: _widgetBackground);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _SectionTitle(
           context.tr('Готовый стиль'),
@@ -124,43 +177,71 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             context.tr('Свой фон'),
             context.tr(
                 'Картинка или зацикленное видео. Исходный файл используется без повторного сжатия.')),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          ChoiceChip(
+            label: Text(context.tr('Основной плеер')),
+            selected: !_widgetBackground,
+            onSelected: _importing
+                ? null
+                : (_) => setState(() => _widgetBackground = false),
+          ),
+          ChoiceChip(
+            label: Text(context.tr('Виджет')),
+            selected: _widgetBackground,
+            onSelected: _importing
+                ? null
+                : (_) => setState(() => _widgetBackground = true),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        if (_importing) const LinearProgressIndicator(minHeight: 2),
         Wrap(spacing: 10, runSpacing: 10, children: [
           FilledButton.tonalIcon(
-              onPressed: () => theme.setBackgroundImagePath(
-                  'asset:///assets/backgrounds/aurora-4k.mp4'),
+              onPressed: () => _setBackground(theme, _bundledVideo),
               icon: const Icon(Icons.high_quality_outlined),
               label: Text(context.tr('Готовый 4K-видеофон'))),
           FilledButton.icon(
-              onPressed: _importing ? null : _importVideo,
+              onPressed: _importing
+                  ? null
+                  : () =>
+                      _importFile('Видеофайлы', ThemeProvider.videoExtensions),
               icon: const Icon(Icons.video_library_outlined),
-              label: Text(_importing
-                  ? context.tr('Копируем видео…')
-                  : context.tr('Импортировать своё видео'))),
+              label: Text(context.tr('Импортировать своё видео'))),
           OutlinedButton.icon(
-              onPressed: () => _pickPhoto(context),
+              onPressed: _importing
+                  ? null
+                  : () =>
+                      _importFile('Изображения', ThemeProvider.imageExtensions),
               icon: const Icon(Icons.image_outlined),
               label: Text(context.tr('Выбрать фото'))),
-          if (theme.importedVideoPath != null &&
-              theme.backgroundImagePath != theme.importedVideoPath)
-            OutlinedButton(
-                onPressed: () =>
-                    theme.setBackgroundImagePath(theme.importedVideoPath),
-                child: Text(context.tr('Моё видео'))),
+          if (theme.savedBackgrounds.isNotEmpty)
+            OutlinedButton.icon(
+                onPressed: () => _pickSaved(theme),
+                icon: const Icon(Icons.collections_outlined),
+                label: Text(context.tr('Сохранённые фоны'))),
           OutlinedButton.icon(
-              onPressed: () => theme.setBackgroundImagePath(null),
+              onPressed: () => _setBackground(theme, null),
               icon: const Icon(Icons.auto_awesome),
-              label: Text(context.tr('Вернуть готовый фон'))),
+              label: Text(context.tr(_widgetBackground
+                  ? 'Использовать фон плеера'
+                  : 'Вернуть готовый фон'))),
         ]),
-        if (theme.backgroundImagePath != null)
+        if (selectedMedia != null)
           Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                  theme.backgroundImagePath == theme.importedVideoPath
-                      ? theme.importedVideoName
-                      : theme.backgroundImagePath!.split(RegExp(r'[/\\]')).last,
+              child: Text(theme.backgroundName(selectedMedia),
                   style: const TextStyle(color: Colors.white70),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis)),
+        if (selectedMedia != null &&
+            theme.backgroundType(compact: _widgetBackground) ==
+                BackgroundType.video)
+          TextButton.icon(
+            onPressed: () => _editLoop(theme),
+            icon: const Icon(Icons.loop),
+            label: Text('${context.tr('Участок повтора')} · '
+                '${loop.from}–${loop.to?.toString() ?? context.tr('до конца')}'),
+          ),
         const SizedBox(height: 16),
         Wrap(spacing: 8, children: [
           ChoiceChip(
@@ -174,10 +255,12 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
         ]),
         SettingSlider(
             label: context.tr('Затемнение фона'),
-            value: theme.dim,
+            value: _widgetBackground ? theme.widgetDim : theme.dim,
             max: .85,
-            display: '${(theme.dim * 100).round()}%',
-            onChanged: (v) => theme.change({'dim': v})),
+            display:
+                '${((_widgetBackground ? theme.widgetDim : theme.dim) * 100).round()}%',
+            onChanged: (v) =>
+                theme.change({_widgetBackground ? 'widgetDim' : 'dim': v})),
         SettingSlider(
             label: context.tr('Размытие'),
             value: theme.blur,
@@ -234,16 +317,26 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
         const SizedBox(height: 18),
         Text(context.tr('Шрифт')),
         const SizedBox(height: 8),
-        Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: ThemeProvider.fonts
-                .map((font) => ChoiceChip(
-                    label:
-                        Text(font == 'System' ? context.tr('Системный') : font),
-                    selected: theme.fontFamily == font,
-                    onSelected: (_) => theme.setFontFamily(font)))
-                .toList()),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          ...ThemeProvider.fonts.map((font) => ChoiceChip(
+              label: Text(font == 'System' ? context.tr('Системный') : font),
+              selected: theme.fontFamily == font,
+              onSelected: (_) => _setFont(theme, font))),
+          for (final font in theme.savedFonts)
+            ChoiceChip(
+              label: Text(font.name),
+              selected: theme.fontFamily == ThemeProvider.fontId(font),
+              onSelected: (_) => _setFont(theme, ThemeProvider.fontId(font)),
+            ),
+          OutlinedButton.icon(
+            onPressed: _importing
+                ? null
+                : () => _importFile('Шрифты', ThemeProvider.fontExtensions,
+                    font: true),
+            icon: const Icon(Icons.font_download_outlined),
+            label: Text(context.tr('Импортировать шрифт')),
+          ),
+        ]),
         SettingSlider(
             label: context.tr('Плотность панелей'),
             value: theme.panelOpacity,
@@ -375,6 +468,91 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
           label: Text(context.tr('Сбросить оформление'))),
     ]);
   }
+}
+
+class _LoopDialog extends StatefulWidget {
+  const _LoopDialog({required this.initial, required this.maxSeconds});
+  final VideoLoop initial;
+  final int maxSeconds;
+
+  @override
+  State<_LoopDialog> createState() => _LoopDialogState();
+}
+
+class _LoopDialogState extends State<_LoopDialog> {
+  final _form = GlobalKey<FormState>();
+  late final _from = TextEditingController(text: '${widget.initial.from}');
+  late final _to = TextEditingController(text: widget.initial.to?.toString());
+
+  @override
+  void dispose() {
+    _from.dispose();
+    _to.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(context.tr('Участок повтора')),
+        content: Form(
+          key: _form,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextFormField(
+              controller: _from,
+              decoration:
+                  InputDecoration(labelText: context.tr('Начало, секунды')),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (value) {
+                final seconds = int.tryParse(value ?? '');
+                return seconds == null || seconds >= widget.maxSeconds
+                    ? context.tr('Укажите секунду в пределах видео.')
+                    : null;
+              },
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _to,
+              decoration: InputDecoration(
+                labelText: context.tr('Конец, секунды'),
+                hintText: context.tr('До конца файла'),
+              ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              validator: (value) {
+                if (value == null || value.isEmpty) return null;
+                final seconds = int.tryParse(value);
+                final start = int.tryParse(_from.text) ?? 0;
+                return seconds == null ||
+                        seconds <= start ||
+                        seconds > widget.maxSeconds
+                    ? context.tr('Конец должен быть после начала.')
+                    : null;
+              },
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop<VideoLoop>(context, (from: 0, to: null)),
+            child: Text(context.tr('Всё видео')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(context.tr('Отмена')),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (_form.currentState!.validate()) {
+                Navigator.pop<VideoLoop>(context,
+                    (from: int.parse(_from.text), to: int.tryParse(_to.text)));
+              }
+            },
+            child: Text(context.tr('Сохранить')),
+          ),
+        ],
+      );
 }
 
 class SettingSlider extends StatelessWidget {

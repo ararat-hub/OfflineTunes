@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'localization_de_fr.dart';
 
 extension OfflineTunesLocalization on BuildContext {
   String tr(String source, [Map<String, Object> arguments = const {}]) {
@@ -7,6 +8,8 @@ extension OfflineTunesLocalization on BuildContext {
     final message = switch (language) {
       'en' => translation?.$1 ?? source,
       'es' => translation?.$2 ?? source,
+      'de' => germanFrench[source]?.$1 ?? translation?.$1 ?? source,
+      'fr' => germanFrench[source]?.$2 ?? translation?.$1 ?? source,
       _ => source,
     };
     if (arguments.isEmpty) return message;
@@ -19,6 +22,109 @@ extension OfflineTunesLocalization on BuildContext {
 final _placeholder = RegExp(r'\{(\w+)\}');
 
 const _translations = <String, (String, String)>{
+  'Полные треки · Audius': (
+    'Full tracks · Audius',
+    'Pistas completas · Audius'
+  ),
+  'В вашей медиатеке': ('In your library', 'En tu biblioteca'),
+  'Полные записи · Wikimedia Commons': (
+    'Full recordings · Wikimedia Commons',
+    'Grabaciones completas · Wikimedia Commons'
+  ),
+  'Каталог временно недоступен.': (
+    'The catalogue is temporarily unavailable.',
+    'El catálogo no está disponible temporalmente.'
+  ),
+  'Ещё результаты': ('More results', 'Más resultados'),
+  'Источник записи': ('Recording source', 'Fuente de la grabación'),
+  'Недавно прослушанные': ('Recently played', 'Reproducidas recientemente'),
+  'Все треки': ('All tracks', 'Todas las pistas'),
+  'Здесь появятся прослушанные треки.': (
+    'Tracks you play will appear here.',
+    'Las pistas que reproduzcas aparecerán aquí.'
+  ),
+  'Убрать из избранного': ('Remove from favorites', 'Quitar de favoritos'),
+  'В избранное': ('Add to favorites', 'Añadir a favoritos'),
+  'Рекомендации': ('Recommendations', 'Recomendaciones'),
+  'Подборки': ('Discover', 'Descubrir'),
+  'Для вас': ('For you', 'Para ti'),
+  'Классика': ('Classical', 'Clásica'),
+  'Джаз': ('Jazz', 'Jazz'),
+  'Электроника': ('Electronic', 'Electrónica'),
+  'Фолк': ('Folk', 'Folk'),
+  'Слушайте музыку или добавляйте треки в избранное, чтобы увидеть рекомендации из медиатеки.':
+      (
+    'Play music or add tracks to favorites for recommendations from your library.',
+    'Escucha música o añade pistas a favoritos para recibir recomendaciones de tu biblioteca.'
+  ),
+  'Загрузки': ('Downloads', 'Descargas'),
+  'Загрузки появятся в мобильной версии.': (
+    'Downloads are planned for the mobile version.',
+    'Las descargas están previstas para la versión móvil.'
+  ),
+  'Звук': ('Sound', 'Sonido'),
+  'Эквалайзер для аудиотреков': (
+    'Audio track equalizer',
+    'Ecualizador de pistas'
+  ),
+  'Ровный': ('Flat', 'Plano'),
+  'Больше баса': ('Bass boost', 'Refuerzo de graves'),
+  'Голос': ('Voice', 'Voz'),
+  'Яркий': ('Bright', 'Brillante'),
+  'Низкие частоты': ('Bass', 'Graves'),
+  'Средние частоты': ('Midrange', 'Medios'),
+  'Высокие частоты': ('Treble', 'Agudos'),
+  'Основной плеер': ('Main player', 'Reproductor principal'),
+  'Сохранённые фоны': ('Saved backgrounds', 'Fondos guardados'),
+  'Использовать фон плеера': (
+    'Use player background',
+    'Usar el fondo del reproductor'
+  ),
+  'Участок повтора': ('Loop range', 'Intervalo de repetición'),
+  'до конца': ('end', 'final'),
+  'Начало, секунды': ('Start, seconds', 'Inicio, segundos'),
+  'Конец, секунды': ('End, seconds', 'Fin, segundos'),
+  'До конца файла': ('Until the end of the file', 'Hasta el final del archivo'),
+  'Укажите секунду в пределах видео.': (
+    'Enter a time within the video.',
+    'Introduce un tiempo dentro del vídeo.'
+  ),
+  'Конец должен быть после начала.': (
+    'End time must follow the start.',
+    'El final debe ser posterior al inicio.'
+  ),
+  'Всё видео': ('Entire video', 'Vídeo completo'),
+  'Шрифты': ('Fonts', 'Fuentes'),
+  'Импортировать шрифт': ('Import font', 'Importar fuente'),
+  'Не удалось открыть файл оформления.': (
+    'Could not open the appearance file.',
+    'No se pudo abrir el archivo de apariencia.'
+  ),
+  'Обновления': ('Updates', 'Actualizaciones'),
+  'Доступна новая версия OfflineTunes': (
+    'A new version of OfflineTunes is available',
+    'Hay una nueva versión de OfflineTunes'
+  ),
+  'Версия {version}': ('Version {version}', 'Versión {version}'),
+  'Позже': ('Later', 'Más tarde'),
+  'Открыть релиз на GitHub': (
+    'Open release on GitHub',
+    'Abrir versión en GitHub'
+  ),
+  'Установлена актуальная версия.': (
+    'You have the latest version.',
+    'Tienes la última versión.'
+  ),
+  'Не удалось проверить обновления.': (
+    'Could not check for updates.',
+    'No se pudieron comprobar las actualizaciones.'
+  ),
+  'Предлагать новые версии': (
+    'Notify me about new versions',
+    'Avisarme de nuevas versiones'
+  ),
+  'Проверяем…': ('Checking…', 'Comprobando…'),
+  'Проверить обновления': ('Check for updates', 'Buscar actualizaciones'),
   'Главная': ('Home', 'Inicio'),
   'Поиск': ('Search', 'Buscar'),
   'Медиатека': ('Library', 'Biblioteca'),

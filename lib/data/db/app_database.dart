@@ -32,12 +32,18 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteTrackById(String id) =>
       (delete(tracks)..where((t) => t.id.equals(id))).go();
 
-  Future<List<Track>> searchTracks(String query) {
-    final search = '%${query.toLowerCase()}%';
-    return (select(tracks)
-          ..where((t) =>
-              t.title.lower().like(search) | t.artist.lower().like(search)))
-        .get();
+  Future<List<Track>> searchTracks(String query) async {
+    final words = query.toLowerCase().trim().split(RegExp(r'\s+'));
+    final local = await getAllTracks();
+    return local
+        .where((track) {
+          final searchable =
+              '${track.title} ${track.artist} ${track.album ?? ''} ${track.genre ?? ''}'
+                  .toLowerCase();
+          return words.every(searchable.contains);
+        })
+        .take(150)
+        .toList();
   }
 
   @override

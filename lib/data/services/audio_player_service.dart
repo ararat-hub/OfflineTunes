@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/playback_track.dart';
+import '../models/equalizer.dart';
+import 'music_catalog.dart';
 
 class AudioPlayerService extends ChangeNotifier {
   final Player _player;
@@ -23,10 +25,14 @@ class AudioPlayerService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   double _volume = 1;
+  Equalizer _equalizer = flatEqualizer;
   String? _error;
   Timer? _saveTimer;
+  final ValueChanged<PlaybackTrack>? onListened;
+  String? _recordedPath;
 
-  AudioPlayerService({Player? player}) : _player = player ?? Player() {
+  AudioPlayerService({Player? player, this.onListened})
+      : _player = player ?? Player() {
     _subscriptions.addAll([
       _player.stream.playing.listen((value) {
         _isPlaying = value;
@@ -37,6 +43,14 @@ class AudioPlayerService extends ChangeNotifier {
         // Keep the restored position until _open has loaded and sought the file.
         if (!_opened) return;
         _position = value;
+        final current = _current;
+        if (current != null &&
+            _isPlaying &&
+            value >= const Duration(seconds: 1) &&
+            _recordedPath != current.path) {
+          _recordedPath = current.path;
+          onListened?.call(current);
+        }
         _notify();
         _saveTimer ??= Timer(const Duration(seconds: 2), () {
           _saveTimer = null;
@@ -61,6 +75,7 @@ class AudioPlayerService extends ChangeNotifier {
         for (final track in _queue) {
           if (Media(track.path).uri == uri && _current != track) {
             _current = track;
+            _recordedPath = null;
             _position = Duration.zero;
             // Metadata can arrive before the playlist event. The duration
             // stream is distinct, so an equal-length next track won't re-emit it.
@@ -93,6 +108,8 @@ class AudioPlayerService extends ChangeNotifier {
   Duration get position => _position;
   Duration get duration => _duration;
   double get volume => _volume;
+  Equalizer get equalizer => _equalizer;
+  bool get supportsEqualizer => _player.platform is NativePlayer;
   String get currentTitle => _current?.title ?? '';
   String get currentArtist => _current?.artist ?? '';
   String get currentPath => _current?.path ?? '';
@@ -110,7 +127,7 @@ class AudioPlayerService extends ChangeNotifier {
           ((_prefs!.getDouble('player_volume') ?? 100) / 100).clamp(0.0, 1.0);
       await _player.setVolume(_volume * 100);
       final path = _prefs!.getString('player_last_path') ?? '';
-      if (path.isNotEmpty) {
+      if (path.isNotEmpty && !_isLegacyPreview(path)) {
         _current = PlaybackTrack(
             path: path,
             title: _prefs!.getString('player_last_title') ?? 'Без названия',
@@ -119,11 +136,26 @@ class AudioPlayerService extends ChangeNotifier {
         final ms = _prefs!.getInt('player_last_position_ms') ?? 0;
         _position = Duration(milliseconds: ms < 0 ? 0 : ms);
       }
+      final tone = (
+        bass: (_prefs!.getInt('audio_eq_bass') ?? 0).clamp(-6, 6),
+        mid: (_prefs!.getInt('audio_eq_mid') ?? 0).clamp(-6, 6),
+        treble: (_prefs!.getInt('audio_eq_treble') ?? 0).clamp(-6, 6),
+      );
+      if (tone != flatEqualizer) await _applyEqualizer(tone);
     } catch (e) {
       debugPrint('Restore playback state: $e');
       _error = 'Не удалось восстановить настройки плеера.';
     }
     _notify();
+  }
+
+  bool _isLegacyPreview(String path) {
+    final uri = Uri.tryParse(path);
+    if (uri == null) return false;
+    final host = uri.host.toLowerCase();
+    return (host.endsWith('.itunes.apple.com') ||
+            host.endsWith('.mzstatic.com')) &&
+        uri.path.toLowerCase().contains('/audiopreview');
   }
 
   // Serialize commands so a slow open cannot overwrite a later selection.
@@ -183,6 +215,7 @@ class AudioPlayerService extends ChangeNotifier {
     _isLoading = true;
     _opened = false;
     _completed = false;
+    _recordedPath = null;
     _error = null;
     _saveTimer?.cancel();
     _saveTimer = null;
@@ -190,7 +223,16 @@ class AudioPlayerService extends ChangeNotifier {
     final savedPosition = _position;
     await _validate(currentPath);
     await _player.open(
-        Playlist(_queue.map((track) => Media(track.path)).toList(),
+        Playlist(
+            _queue
+                .map((track) => Media(
+                      track.path,
+                      httpHeaders: Uri.tryParse(track.path)?.host ==
+                              'upload.wikimedia.org'
+                          ? const {'User-Agent': MusicCatalog.userAgent}
+                          : null,
+                    ))
+                .toList(),
             index: _queue.indexOf(_current!)),
         play: false);
     await _player.setPlaylistMode(_repeat);
@@ -278,8 +320,30 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> setVolume(double value) => _run(() async {
         _volume = value.clamp(0.0, 1.0);
-        await _player.setVolume(_volume * 100);
+        await _player.setVolume(_volume * 100 * equalizerHeadroom(_equalizer));
         await _prefs?.setDouble('player_volume', _volume * 100);
+      });
+
+  Future<void> _applyEqualizer(Equalizer value) async {
+    final backend = _player.platform;
+    if (backend is NativePlayer) {
+      await backend.setProperty('af', equalizerFilter(value));
+      await _player.setVolume(_volume * 100 * equalizerHeadroom(value));
+    }
+    _equalizer = value;
+  }
+
+  Future<void> setEqualizer(Equalizer value) => _run(() async {
+        final adjusted = (
+          bass: value.bass.clamp(-6, 6),
+          mid: value.mid.clamp(-6, 6),
+          treble: value.treble.clamp(-6, 6)
+        );
+        if (_equalizer == adjusted) return;
+        await _applyEqualizer(adjusted);
+        await _prefs?.setInt('audio_eq_bass', adjusted.bass);
+        await _prefs?.setInt('audio_eq_mid', adjusted.mid);
+        await _prefs?.setInt('audio_eq_treble', adjusted.treble);
       });
 
   Future<void> _saveState() async {
