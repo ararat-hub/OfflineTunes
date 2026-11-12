@@ -1,0 +1,531 @@
+import '../../core/localization.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
+import '../../data/db/app_database.dart';
+import '../../data/services/app_preferences.dart';
+import '../../data/services/audio_player_service.dart';
+import '../../data/services/desktop_window_service.dart';
+import '../../data/services/youtube_player_service.dart';
+import '../../theme/theme_provider.dart';
+import '../../widgets/app_backdrop.dart';
+import '../../widgets/appearance_editor.dart';
+import '../../widgets/mini_player.dart';
+import '../../widgets/player_controls.dart';
+import '../../widgets/youtube_panel.dart';
+import '../search/search_screen.dart';
+import '../settings/settings_screen.dart';
+import '../profile/profile_screen.dart';
+import '../favorites/favorites_screen.dart';
+import '../add_music/add_music_screen.dart';
+import '../library/library_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  final AppDatabase db;
+  const HomeScreen({super.key, required this.db});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+  StreamSubscription<HotkeyAction>? _hotkeys;
+  double _volumeBeforeMute = 1;
+  static const _titles = [
+    'Главная',
+    'Поиск',
+    'Медиатека',
+    'Избранное',
+    'Добавить музыку',
+    'Настройки',
+    'Ваш профиль'
+  ];
+  void _navigate(int index) => setState(() => _selectedIndex = index);
+  Future<void> _editFromWidget() async {
+    await context.read<DesktopWindowService>().restore();
+    if (mounted) _navigate(5);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _hotkeys ??= context.read<AppPreferences?>()?.pressed.listen(_hotkey);
+  }
+
+  Future<void> _hotkey(HotkeyAction action) async {
+    if (!mounted) return;
+    final window = context.read<DesktopWindowService>();
+    final youtube = context.read<YoutubePlayerService>();
+    final audio = context.read<AudioPlayerService>();
+    final theme = context.read<ThemeProvider>();
+    try {
+      if (action == HotkeyAction.widget) {
+        if (await windowManager.isMinimized()) await windowManager.restore();
+        if (window.compact) {
+          await window.restore();
+        } else {
+          await window.enterWidget(theme, youtube: youtube.active);
+        }
+      } else if (youtube.active) {
+        if (action == HotkeyAction.playPause) {
+          await youtube.toggleEmbeddedPlayback();
+        }
+      } else {
+        switch (action) {
+          case HotkeyAction.playPause:
+            await audio.togglePlayPause();
+          case HotkeyAction.next:
+            await audio.next();
+          case HotkeyAction.previous:
+            await audio.previous();
+          case HotkeyAction.mute:
+            if (audio.volume > 0) {
+              _volumeBeforeMute = audio.volume;
+              await audio.setVolume(0);
+            } else {
+              await audio.setVolume(_volumeBeforeMute);
+            }
+          case HotkeyAction.widget:
+            break;
+        }
+      }
+    } catch (e) {
+      debugPrint('Hotkey ${action.name}: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_hotkeys?.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeProvider>();
+    final window = context.watch<DesktopWindowService>();
+    final youtube = context.watch<YoutubePlayerService>();
+    final fullWatchPage = youtube.watchPage && _selectedIndex == 4;
+    final pages = [
+      _Dashboard(onNavigate: _navigate),
+      SearchScreen(db: widget.db),
+      const LibraryScreen(),
+      const FavoritesScreen(),
+      const AddMusicScreen(),
+      const SettingsScreen(),
+      const ProfileScreen(),
+    ];
+    return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: ClipRRect(
+          borderRadius:
+              BorderRadius.circular(window.compact ? theme.widgetRadius : 0),
+          child: Stack(fit: StackFit.expand, children: [
+            AppBackdrop(theme: theme, compact: window.compact),
+            if (window.compact)
+              DragToResizeArea(child: _FloatingPlayer(onEdit: _editFromWidget))
+            else
+              Row(children: [
+                Container(
+                    width: 100,
+                    decoration: BoxDecoration(
+                        color:
+                            Colors.black.withValues(alpha: theme.panelOpacity),
+                        border: const Border(
+                            right: BorderSide(color: Colors.white12))),
+                    child: Column(children: [
+                      const SizedBox(height: 18),
+                      Semantics(
+                          button: true,
+                          label: context.tr('Мой профиль'),
+                          child: InkWell(
+                              onTap: () => _navigate(6),
+                              customBorder: const CircleBorder(),
+                              child: Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: ProfileAvatar(
+                                      path: theme.avatarPath, size: 44)))),
+                      const SizedBox(height: 14),
+                      Expanded(
+                          child: SingleChildScrollView(
+                              child: IntrinsicHeight(
+                                  child: NavigationRail(
+                        backgroundColor: Colors.transparent,
+                        selectedIndex:
+                            _selectedIndex < 6 ? _selectedIndex : null,
+                        labelType: NavigationRailLabelType.all,
+                        groupAlignment: -1,
+                        onDestinationSelected: _navigate,
+                        destinations: [
+                          NavigationRailDestination(
+                              icon: Icon(Icons.home_outlined),
+                              selectedIcon: Icon(Icons.home),
+                              label: Text(context.tr('Главная'),
+                                  style: TextStyle(fontSize: 11))),
+                          NavigationRailDestination(
+                              icon: Icon(Icons.search),
+                              label: Text(context.tr('Поиск'),
+                                  style: TextStyle(fontSize: 11))),
+                          NavigationRailDestination(
+                              icon: Icon(Icons.library_music_outlined),
+                              selectedIcon: Icon(Icons.library_music),
+                              label: Text(context.tr('Медиатека'),
+                                  style: TextStyle(fontSize: 11))),
+                          NavigationRailDestination(
+                              icon: Icon(Icons.favorite_border),
+                              selectedIcon: Icon(Icons.favorite),
+                              label: Text(context.tr('Избранное'),
+                                  style: TextStyle(fontSize: 11))),
+                          NavigationRailDestination(
+                              icon: Icon(Icons.add_circle_outline),
+                              selectedIcon: Icon(Icons.add_circle),
+                              label: Text(context.tr('Добавить'),
+                                  style: TextStyle(fontSize: 11))),
+                          NavigationRailDestination(
+                              icon: Icon(Icons.settings_outlined),
+                              selectedIcon: Icon(Icons.settings),
+                              label: Text(context.tr('Настройки'),
+                                  style: TextStyle(fontSize: 11))),
+                        ],
+                      )))),
+                      PlayerControlButton(
+                          tooltip: context.tr('Плавающий виджет'),
+                          icon:
+                              const Icon(Icons.picture_in_picture_alt_outlined),
+                          onPressed: window.busy
+                              ? null
+                              : () => window.enterWidget(theme,
+                                  youtube: youtube.active)),
+                      const SizedBox(height: 12),
+                    ])),
+                Expanded(
+                    child: Column(children: [
+                  Container(
+                      padding: const EdgeInsets.fromLTRB(24, 14, 16, 14),
+                      child: Row(children: [
+                        Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                              Text(context.tr(_titles[_selectedIndex]),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 17)),
+                              Text(
+                                  theme.profileName ==
+                                          ThemeProvider.defaultProfileName
+                                      ? context.tr(theme.profileName)
+                                      : theme.profileName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Colors.white60, fontSize: 12)),
+                            ])),
+                        PlayerControlButton(
+                            tooltip: context.tr('Открыть ссылку'),
+                            icon: const Icon(Icons.link),
+                            onPressed: () {
+                              if (youtube.watchPage) unawaited(youtube.close());
+                              _navigate(4);
+                            }),
+                        PlayerControlButton(
+                            tooltip: context.tr('Открыть плавающий виджет'),
+                            icon: const Icon(
+                                Icons.picture_in_picture_alt_outlined),
+                            onPressed: window.busy
+                                ? null
+                                : () => window.enterWidget(theme,
+                                    youtube: youtube.active)),
+                      ])),
+                  if (window.error != null)
+                    Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(context.tr(window.error!),
+                            style: const TextStyle(color: Colors.redAccent))),
+                  if (youtube.active)
+                    Flexible(
+                        flex: fullWatchPage ? 1 : 2,
+                        fit: fullWatchPage ? FlexFit.tight : FlexFit.loose,
+                        child: YoutubePanel(fill: fullWatchPage)),
+                  if (!fullWatchPage) Expanded(child: pages[_selectedIndex]),
+                  if (!youtube.active)
+                    MiniPlayer(
+                        playerService: context.read<AudioPlayerService>(),
+                        opacity: theme.panelOpacity),
+                ])),
+              ]),
+          ]),
+        ));
+  }
+}
+
+class _FloatingPlayer extends StatelessWidget {
+  final VoidCallback onEdit;
+  const _FloatingPlayer({required this.onEdit});
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeProvider>();
+    final window = context.watch<DesktopWindowService>();
+    final youtube = context.watch<YoutubePlayerService>();
+    final opacity = theme.widgetStyle == WidgetStyle.solid
+        ? .85
+        : theme.widgetStyle == WidgetStyle.minimal
+            ? 0.0
+            : theme.panelOpacity;
+    return Container(
+        decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(theme.widgetRadius),
+            border: Border.all(color: Colors.white24)),
+        child: Column(children: [
+          Container(
+              color: Colors.black.withValues(alpha: opacity),
+              padding: const EdgeInsets.only(left: 14, right: 4),
+              child: Row(children: [
+                Expanded(
+                    child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onPanStart: (_) => window.drag(),
+                        child: const SizedBox(
+                            height: 48,
+                            child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text('OFFLINETUNES',
+                                    style: TextStyle(
+                                        letterSpacing: 1.8,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600)))))),
+                PlayerControlButton(
+                    tooltip: context.tr('Закрепить поверх окон'),
+                    icon: Icon(
+                        theme.widgetOnTop
+                            ? Icons.push_pin
+                            : Icons.push_pin_outlined,
+                        size: 17),
+                    onPressed: () async {
+                      await theme.change({'widgetOnTop': !theme.widgetOnTop});
+                      await window.setPinned(theme.widgetOnTop);
+                    }),
+                PlayerControlButton(
+                    tooltip: context.tr('Настроить виджет'),
+                    icon: const Icon(Icons.tune, size: 18),
+                    onPressed: onEdit),
+                PlayerControlButton(
+                    tooltip: context.tr('Развернуть плеер'),
+                    icon: const Icon(Icons.open_in_full, size: 17),
+                    onPressed: window.busy ? null : window.restore),
+                PlayerControlButton(
+                    tooltip: context.tr('Свернуть в панель задач'),
+                    icon: const Icon(Icons.remove, size: 18),
+                    onPressed: window.minimize),
+              ])),
+          if (youtube.active)
+            const Expanded(child: YoutubePanel(compact: true, fill: true))
+          else ...[
+            Expanded(
+                child: LayoutBuilder(
+                    builder: (context, constraints) =>
+                        constraints.maxHeight < (theme.widgetClock ? 100 : 64)
+                            ? const SizedBox.shrink()
+                            : Center(
+                                child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (theme.widgetClock)
+                                            const _Clock(compact: true),
+                                          Icon(Icons.graphic_eq,
+                                              color: theme.accent
+                                                  .withValues(alpha: .8),
+                                              size: 40),
+                                        ]))))),
+            MiniPlayer(
+                playerService: context.read<AudioPlayerService>(),
+                compact: true,
+                showArtist: theme.widgetArtist,
+                showProgress: theme.widgetProgress,
+                opacity: opacity),
+          ],
+        ]));
+  }
+}
+
+class _Dashboard extends StatelessWidget {
+  final ValueChanged<int> onNavigate;
+  const _Dashboard({required this.onNavigate});
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeProvider>();
+    return ListView(
+        padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+        children: [
+          LayoutBuilder(builder: (context, constraints) {
+            final greeting =
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(context.tr('ВАША МУЗЫКА. ВАШ РИТМ.'),
+                  style: TextStyle(
+                      fontSize: 11, letterSpacing: 2.5, color: theme.accent)),
+              const SizedBox(height: 16),
+              Text(
+                  theme.profileName == ThemeProvider.defaultProfileName
+                      ? context.tr(theme.profileName)
+                      : theme.profileName,
+                  style: const TextStyle(
+                      fontSize: 36, fontWeight: FontWeight.w700),
+                  maxLines: 2),
+              const SizedBox(height: 8),
+              Text(
+                  theme.profileBio == ThemeProvider.defaultProfileBio
+                      ? context.tr(theme.profileBio)
+                      : theme.profileBio,
+                  style: const TextStyle(color: Colors.white70, fontSize: 15)),
+            ]);
+            if (constraints.maxWidth < 600) {
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    greeting,
+                    if (theme.showClock)
+                      const Padding(
+                          padding: EdgeInsets.only(top: 16), child: _Clock())
+                  ]);
+            }
+            return Row(children: [
+              Expanded(child: greeting),
+              if (theme.showClock) const _Clock()
+            ]);
+          }),
+          const SizedBox(height: 28),
+          Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: theme.panelOpacity),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white12)),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(context.tr('СЕЙЧАС В ВАШЕМ ПРОСТРАНСТВЕ'),
+                        style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 2,
+                            color: theme.accent)),
+                    const SizedBox(height: 12),
+                    Selector<AudioPlayerService, String>(
+                        selector: (_, player) => player.currentTitle,
+                        builder: (context, title, _) => Text(
+                            title.isEmpty
+                                ? context
+                                    .tr('Добавьте музыку и найдите свой ритм')
+                                : title,
+                            style: const TextStyle(
+                                fontSize: 24, fontWeight: FontWeight.w600),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis)),
+                    const SizedBox(height: 20),
+                    Wrap(spacing: 10, runSpacing: 10, children: [
+                      FilledButton.icon(
+                          onPressed: () => onNavigate(2),
+                          icon: const Icon(Icons.library_music),
+                          label: Text(context.tr('Моя музыка'))),
+                      OutlinedButton.icon(
+                          onPressed: () => onNavigate(4),
+                          icon: const Icon(Icons.link),
+                          label: Text(context.tr('YouTube / ссылка'))),
+                      OutlinedButton.icon(
+                          onPressed: () => context
+                              .read<DesktopWindowService>()
+                              .enterWidget(theme,
+                                  youtube: context
+                                      .read<YoutubePlayerService>()
+                                      .active),
+                          icon: const Icon(Icons.picture_in_picture_alt),
+                          label: Text(context.tr('Виджет'))),
+                    ]),
+                  ])),
+          const SizedBox(height: 26),
+          Text(context.tr('Настроение в один клик'),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: ThemeProvider.presets
+                  .map((preset) => InkWell(
+                        onTap: () => theme.applyPreset(preset),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                            width: 150,
+                            height: 90,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: preset.colors),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                    color: theme.presetId == preset.id
+                                        ? preset.accent
+                                        : Colors.white12)),
+                            child: Align(
+                                alignment: Alignment.bottomLeft,
+                                child: Text(context.tr(preset.name),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12)))),
+                      ))
+                  .toList()),
+          const SizedBox(height: 22),
+          ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: ProfileAvatar(path: theme.avatarPath, size: 44),
+              title: Text(context.tr('Настроить оформление')),
+              subtitle:
+                  Text(context.tr('4K-видеофон, шрифты и оформление виджета')),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: () => onNavigate(5)),
+        ]);
+  }
+}
+
+class _Clock extends StatefulWidget {
+  final bool compact;
+  const _Clock({this.compact = false});
+  @override
+  State<_Clock> createState() => _ClockState();
+}
+
+class _ClockState extends State<_Clock> {
+  Timer? _timer;
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(DateFormat('HH:mm').format(DateTime.now()),
+                style: TextStyle(
+                    fontSize: widget.compact ? 24 : 52,
+                    fontWeight: FontWeight.w200,
+                    letterSpacing: -2)),
+            if (!widget.compact)
+              Text(
+                  DateFormat('d MMMM · EEEE',
+                          Localizations.localeOf(context).languageCode)
+                      .format(DateTime.now()),
+                  style: const TextStyle(fontSize: 11, color: Colors.white60)),
+          ]);
+}

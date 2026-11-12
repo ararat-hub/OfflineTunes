@@ -1,0 +1,306 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/playback_track.dart';
+
+class AudioPlayerService extends ChangeNotifier {
+  final Player _player;
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  late final Future<void> _ready;
+  Future<void> _operations = Future.value();
+  SharedPreferences? _prefs;
+  List<PlaybackTrack> _queue = [];
+  PlaybackTrack? _current;
+  bool _opened = false;
+  bool _disposed = false;
+  bool _isLoading = false;
+  bool _isPlaying = false;
+  bool _completed = false;
+  bool _shuffle = false;
+  PlaylistMode _repeat = PlaylistMode.none;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  double _volume = 1;
+  String? _error;
+  Timer? _saveTimer;
+
+  AudioPlayerService({Player? player}) : _player = player ?? Player() {
+    _subscriptions.addAll([
+      _player.stream.playing.listen((value) {
+        _isPlaying = value;
+        _notify();
+      }),
+      _player.stream.position.listen((value) {
+        // Native players can publish an initial zero before a file is opened.
+        // Keep the restored position until _open has loaded and sought the file.
+        if (!_opened) return;
+        _position = value;
+        _notify();
+        _saveTimer ??= Timer(const Duration(seconds: 2), () {
+          _saveTimer = null;
+          unawaited(_saveState());
+        });
+      }),
+      _player.stream.duration.listen((value) {
+        _duration = value;
+        _notify();
+      }),
+      _player.stream.completed.listen((value) {
+        _completed = value;
+        if (value) {
+          _isPlaying = false;
+          unawaited(_saveState());
+        }
+        _notify();
+      }),
+      _player.stream.playlist.listen((playlist) {
+        if (playlist.medias.isEmpty) return;
+        final uri = playlist.medias[playlist.index].uri;
+        for (final track in _queue) {
+          if (Media(track.path).uri == uri && _current != track) {
+            _current = track;
+            _position = Duration.zero;
+            // Metadata can arrive before the playlist event. The duration
+            // stream is distinct, so an equal-length next track won't re-emit it.
+            _duration = _player.state.duration;
+            _completed = false;
+            unawaited(_saveState());
+            _notify();
+            break;
+          }
+        }
+      }),
+      _player.stream.error.listen((message) {
+        debugPrint('Audio playback: $message');
+        _error = 'Не удалось воспроизвести трек.';
+        _isLoading = false;
+        _isPlaying = false;
+        _opened = false;
+        _notify();
+      }),
+    ]);
+    _ready = _loadState();
+  }
+
+  bool get isPlaying => _isPlaying;
+  bool get isLoading => _isLoading;
+  bool get hasTrack => _current != null;
+  bool get hasQueue => _queue.length > 1;
+  bool get shuffle => _shuffle;
+  PlaylistMode get repeat => _repeat;
+  Duration get position => _position;
+  Duration get duration => _duration;
+  double get volume => _volume;
+  String get currentTitle => _current?.title ?? '';
+  String get currentArtist => _current?.artist ?? '';
+  String get currentPath => _current?.path ?? '';
+  String? get error => _error;
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> _loadState() async {
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      if (_disposed) return;
+      _volume =
+          ((_prefs!.getDouble('player_volume') ?? 100) / 100).clamp(0.0, 1.0);
+      await _player.setVolume(_volume * 100);
+      final path = _prefs!.getString('player_last_path') ?? '';
+      if (path.isNotEmpty) {
+        _current = PlaybackTrack(
+            path: path,
+            title: _prefs!.getString('player_last_title') ?? 'Без названия',
+            artist: _prefs!.getString('player_last_artist') ?? '');
+        _queue = [_current!];
+        final ms = _prefs!.getInt('player_last_position_ms') ?? 0;
+        _position = Duration(milliseconds: ms < 0 ? 0 : ms);
+      }
+    } catch (e) {
+      debugPrint('Restore playback state: $e');
+      _error = 'Не удалось восстановить настройки плеера.';
+    }
+    _notify();
+  }
+
+  // Serialize commands so a slow open cannot overwrite a later selection.
+  Future<void> _run(Future<void> Function() action) {
+    _operations = _operations.then((_) async {
+      await _ready;
+      if (_disposed) return;
+      try {
+        await action();
+      } catch (e) {
+        debugPrint('Audio action: $e');
+        _error = e is FileSystemException
+            ? e.message
+            : 'Не удалось выполнить действие плеера.';
+      } finally {
+        _isLoading = false;
+        _notify();
+      }
+    });
+    return _operations;
+  }
+
+  Future<void> playUrl(String url, {String? title, String? artist}) =>
+      playQueue([
+        PlaybackTrack(
+            path: url,
+            title: title ?? 'Без названия',
+            artist: artist ?? 'Неизвестный исполнитель'),
+      ]);
+
+  Future<void> playFile(String path, {String? title, String? artist}) =>
+      playUrl(path,
+          title: title ?? path.split(RegExp(r'[/\\]')).last, artist: artist);
+
+  Future<void> playQueue(List<PlaybackTrack> tracks, {int index = 0}) =>
+      _run(() async {
+        if (tracks.isEmpty || index < 0 || index >= tracks.length) return;
+        await _validate(tracks[index].path);
+        _queue = List.of(tracks.where((track) => track.path.isNotEmpty));
+        _current = tracks[index];
+        _position = Duration.zero;
+        _duration = Duration.zero;
+        await _open();
+      });
+
+  Future<void> _validate(String path) async {
+    if (path.isEmpty) throw const FileSystemException('Путь к треку не указан');
+    final uri = Uri.tryParse(path);
+    if (uri?.scheme == 'https' || uri?.scheme == 'http') return;
+    final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(path);
+    if (!await file.exists()) {
+      throw FileSystemException('Файл не найден. Добавьте музыку заново', path);
+    }
+  }
+
+  Future<void> _open() async {
+    _isLoading = true;
+    _opened = false;
+    _completed = false;
+    _error = null;
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _notify();
+    final savedPosition = _position;
+    await _validate(currentPath);
+    await _player.open(
+        Playlist(_queue.map((track) => Media(track.path)).toList(),
+            index: _queue.indexOf(_current!)),
+        play: false);
+    await _player.setPlaylistMode(_repeat);
+    await _player.setShuffle(_shuffle);
+    if (savedPosition > Duration.zero) {
+      // open() queues the native load; seeking before metadata arrives is lost.
+      var loadedDuration = _player.state.duration;
+      if (loadedDuration == Duration.zero) {
+        loadedDuration = await _player.stream.duration
+            .firstWhere((value) => value > Duration.zero)
+            .timeout(const Duration(seconds: 15));
+      }
+      await _player.seek(Duration(
+        milliseconds: savedPosition.inMilliseconds
+            .clamp(0, loadedDuration.inMilliseconds),
+      ));
+    }
+    _position = savedPosition;
+    _opened = true;
+    await _player.play();
+    await _saveState();
+  }
+
+  Future<void> togglePlayPause() => _run(() async {
+        if (!hasTrack) return;
+        if (!_opened) {
+          await _open();
+        } else if (_isPlaying) {
+          await _player.pause();
+          await _saveState();
+        } else {
+          if (_completed) await _player.seek(Duration.zero);
+          await _player.play();
+        }
+      });
+
+  Future<void> pause() => _run(() async {
+        if (_opened) await _player.pause();
+        await _saveState();
+      });
+
+  Future<void> stop() => _run(() async {
+        await _player.stop();
+        _opened = false;
+        _isPlaying = false;
+        _position = Duration.zero;
+        await _saveState();
+      });
+
+  Future<void> seek(Duration value) => _run(() async {
+        if (!_opened || _duration == Duration.zero) return;
+        _position = Duration(
+            milliseconds:
+                value.inMilliseconds.clamp(0, _duration.inMilliseconds));
+        await _player.seek(_position);
+        await _saveState();
+      });
+
+  Future<void> next() => _run(() async {
+        if (_opened && hasQueue) await _player.next();
+      });
+
+  Future<void> previous() => _run(() async {
+        if (!_opened) return;
+        if (_position > const Duration(seconds: 3) || !hasQueue) {
+          await _player.seek(Duration.zero);
+        } else {
+          await _player.previous();
+        }
+      });
+
+  Future<void> toggleShuffle() => _run(() async {
+        _shuffle = !_shuffle;
+        await _player.setShuffle(_shuffle);
+      });
+
+  Future<void> cycleRepeat() => _run(() async {
+        _repeat = switch (_repeat) {
+          PlaylistMode.none => PlaylistMode.loop,
+          PlaylistMode.loop => PlaylistMode.single,
+          PlaylistMode.single => PlaylistMode.none,
+        };
+        await _player.setPlaylistMode(_repeat);
+      });
+
+  Future<void> setVolume(double value) => _run(() async {
+        _volume = value.clamp(0.0, 1.0);
+        await _player.setVolume(_volume * 100);
+        await _prefs?.setDouble('player_volume', _volume * 100);
+      });
+
+  Future<void> _saveState() async {
+    final current = _current;
+    final position = _completed ? Duration.zero : _position;
+    if (current == null || _prefs == null) return;
+    await _prefs!.setString('player_last_path', current.path);
+    await _prefs!.setString('player_last_title', current.title);
+    await _prefs!.setString('player_last_artist', current.artist);
+    await _prefs!.setInt('player_last_position_ms', position.inMilliseconds);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _saveTimer?.cancel();
+    unawaited(_saveState());
+    for (final sub in _subscriptions) {
+      unawaited(sub.cancel());
+    }
+    unawaited(_operations.then((_) => _player.dispose()));
+    super.dispose();
+  }
+}

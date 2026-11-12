@@ -1,0 +1,57 @@
+name: offlinetunes
+description: Offline-first music player
+publish_to: 'none'
+version: 1.3.0+3
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  media_kit: ^1.1.10
+  media_kit_libs_windows_video: ^1.0.9
+  # аудио и видео
+  just_audio: ^0.9.44
+  just_audio_windows: ^0.2.2
+  audioplayers: ^6.1.0
+  audio_service: ^0.18.15
+  # состояние и сеть
+  flutter_riverpod: ^2.6.1
+  provider: ^6.1.2
+  http: ^1.3.0
+  connectivity_plus: ^6.1.3
+  # БД
+  drift: ^2.24.2
+  sqlite3_flutter_libs: ^0.5.28
+  # файлы, метаданные и утилиты
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  file_picker: ^8.1.7
+  file_selector: ^1.0.3
+  shared_preferences: ^2.3.5
+  flutter_media_metadata: ^1.0.0+1
+  audiotags: ^1.4.5
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  # UI
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.2
+  media_kit_video: 2.0.1
+  window_manager: 0.5.1
+  webview_windows: 0.4.0
+  url_launcher: 6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  build_runner: ^2.4.14
+  drift_dev: ^2.24.2
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/backgrounds/
