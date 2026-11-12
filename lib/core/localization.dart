@@ -109,9 +109,9 @@ const _translations = <String, (String, String)>{
     'No se pudo abrir el archivo de apariencia.'
   ),
   'Обновления': ('Updates', 'Actualizaciones'),
-  'Доступна новая версия OfflineTunes': (
-    'A new version of OfflineTunes is available',
-    'Hay una nueva versión de OfflineTunes'
+  'Доступна новая версия {app}': (
+    'A new version of {app} is available',
+    'Hay una nueva versión de {app}'
   ),
   'Версия {version}': ('Version {version}', 'Versión {version}'),
   'Позже': ('Later', 'Más tarde'),

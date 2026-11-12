@@ -1,7 +1,7 @@
 name: offlinetunes
-description: Offline-first music player
+description: oTune offline-first music player
 publish_to: 'none'
-version: 1.4.0+4
+version: 1.4.1+5
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

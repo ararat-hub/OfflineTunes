@@ -1,4 +1,5 @@
 import '../../core/localization.dart';
+import '../../core/strings.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -326,7 +327,7 @@ class _FloatingPlayer extends StatelessWidget {
                             height: 48,
                             child: Align(
                                 alignment: Alignment.centerLeft,
-                                child: Text('OFFLINETUNES',
+                                child: Text(AppStrings.appName,
                                     style: TextStyle(
                                         letterSpacing: 1.8,
                                         fontSize: 10,

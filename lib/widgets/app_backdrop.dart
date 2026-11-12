@@ -84,7 +84,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
           if (!mounted || request != _requestedVideo) return;
           _player ??= Player(
               configuration:
-                  const PlayerConfiguration(title: 'OfflineTunes Background'));
+                  const PlayerConfiguration(title: 'oTune Background'));
           _video ??= VideoController(_player!,
               configuration: const VideoControllerConfiguration(
                   enableHardwareAcceleration: true));

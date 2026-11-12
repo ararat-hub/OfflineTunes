@@ -1,4 +1,5 @@
 import '../core/localization.dart';
+import '../core/strings.dart';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -374,7 +375,7 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
                             child: Row(children: [
                               Icon(Icons.drag_indicator, size: 16),
                               SizedBox(width: 8),
-                              Text('OFFLINETUNES',
+                              Text(AppStrings.appName,
                                   style: TextStyle(
                                       letterSpacing: 2, fontSize: 11)),
                               Spacer(),

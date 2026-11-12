@@ -5,7 +5,7 @@ abstract class AppConstants {
   );
 
   static const String audioChannelId = 'com.example.offlinetunes.channel.audio';
-  static const String audioChannelName = 'Воспроизведение OfflineTunes';
+  static const String audioChannelName = 'Воспроизведение oTune';
 
   static const double minDesktopWidth = 900.0;
   static const double maxContentWidth = 1200.0;

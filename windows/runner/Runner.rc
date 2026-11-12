@@ -90,11 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "offlinetunes" "\0"
+            VALUE "FileDescription", "oTune" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "offlinetunes" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "offlinetunes.exe" "\0"
+            VALUE "OriginalFilename", "oTune.exe" "\0"
+            // Windows path_provider uses ProductName to locate existing app data.
             VALUE "ProductName", "offlinetunes" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

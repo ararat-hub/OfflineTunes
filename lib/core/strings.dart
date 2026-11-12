@@ -1,5 +1,5 @@
 abstract class AppStrings {
-  static const String appName = 'OfflineTunes';
+  static const String appName = 'oTune';
 
   // Навигация
   static const String navHome = 'Главная';

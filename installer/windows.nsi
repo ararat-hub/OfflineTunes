@@ -10,29 +10,31 @@ Unicode true
   !define OUTPUT_DIR "."
 !endif
 !ifndef APP_VERSION
-  !define APP_VERSION "1.4.0"
+  !define APP_VERSION "1.4.1"
 !endif
 !ifndef FILE_VERSION
-  !define FILE_VERSION "1.4.0.4"
+  !define FILE_VERSION "1.4.1.5"
 !endif
 
-Name "OfflineTunes"
-OutFile "${OUTPUT_DIR}\OfflineTunes-Setup-${APP_VERSION}.exe"
-InstallDir "$LOCALAPPDATA\Programs\OfflineTunes"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes"
+!define DEFAULT_DIR "$LOCALAPPDATA\Programs\oTune"
+Name "oTune"
+OutFile "${OUTPUT_DIR}\oTune-Setup-${APP_VERSION}.exe"
+InstallDir "${DEFAULT_DIR}"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 32
 ShowInstDetails show
 ShowUninstDetails show
 VIProductVersion "${FILE_VERSION}"
-VIAddVersionKey "ProductName" "OfflineTunes"
-VIAddVersionKey "FileDescription" "OfflineTunes Setup"
+VIAddVersionKey "ProductName" "oTune"
+VIAddVersionKey "FileDescription" "oTune Setup"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
 VIAddVersionKey "ProductVersion" "${APP_VERSION}"
-VIAddVersionKey "LegalCopyright" "OfflineTunes"
+VIAddVersionKey "LegalCopyright" "oTune"
 
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\offlinetunes.exe"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\oTune.exe"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -44,9 +46,10 @@ VIAddVersionKey "LegalCopyright" "OfflineTunes"
 !insertmacro MUI_LANGUAGE "English"
 
 Var Portable
+Var PreviousInstall
 Function .onInit
   ${IfNot} ${RunningX64}
-    MessageBox MB_OK "OfflineTunes requires 64-bit Windows."
+    MessageBox MB_OK "oTune requires 64-bit Windows."
     Abort
   ${EndIf}
   SetRegView 64
@@ -56,28 +59,42 @@ Function .onInit
   ${GetOptions} $0 "/PORTABLE" $1
   ${IfNot} ${Errors}
     StrCpy $Portable "1"
+  ${Else}
+    ReadRegStr $PreviousInstall HKCU "${UNINSTALL_KEY}" "InstallLocation"
+    ${If} $INSTDIR == "${DEFAULT_DIR}"
+    ${AndIf} $PreviousInstall != ""
+    ${AndIf} ${FileExists} "$PreviousInstall\Uninstall.exe"
+      StrCpy $INSTDIR $PreviousInstall
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
-Section "OfflineTunes"
+Section "oTune"
   SetOutPath "$INSTDIR"
-  File /r /x "*.pdb" /x "*.ilk" /x "*.lib" /x "*.exp" /x "native_assets.json" "${BUILD_DIR}\*.*"
+  File /r /x "*.pdb" /x "*.ilk" /x "*.lib" /x "*.exp" /x "native_assets.json" /x "offlinetunes.exe" "${BUILD_DIR}\*.*"
   ${If} $Portable == "1"
     Goto finished
   ${EndIf}
   SetShellVarContext current
-  CreateDirectory "$SMPROGRAMS\OfflineTunes"
-  CreateShortcut "$SMPROGRAMS\OfflineTunes\OfflineTunes.lnk" "$INSTDIR\offlinetunes.exe"
-  CreateShortcut "$DESKTOP\OfflineTunes.lnk" "$INSTDIR\offlinetunes.exe"
+  ${If} $PreviousInstall == $INSTDIR
+    Delete "$INSTDIR\offlinetunes.exe"
+    Delete "$DESKTOP\OfflineTunes.lnk"
+    Delete "$SMPROGRAMS\OfflineTunes\OfflineTunes.lnk"
+    Delete "$SMPROGRAMS\OfflineTunes\Uninstall.lnk"
+    RMDir "$SMPROGRAMS\OfflineTunes"
+  ${EndIf}
+  CreateDirectory "$SMPROGRAMS\oTune"
+  CreateShortcut "$SMPROGRAMS\oTune\oTune.lnk" "$INSTDIR\oTune.exe"
+  CreateShortcut "$DESKTOP\oTune.lnk" "$INSTDIR\oTune.exe"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
-  CreateShortcut "$SMPROGRAMS\OfflineTunes\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "DisplayName" "OfflineTunes"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "DisplayVersion" "${APP_VERSION}"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "DisplayIcon" "$INSTDIR\offlinetunes.exe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "NoModify" 1
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes" "NoRepair" 1
+  CreateShortcut "$SMPROGRAMS\oTune\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "oTune"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${APP_VERSION}"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\oTune.exe"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
   finished:
 SectionEnd
 
@@ -85,11 +102,11 @@ Section "Uninstall"
   SetRegView 64
   SetShellVarContext current
   !include "files_uninstall.nsh"
-  Delete "$DESKTOP\OfflineTunes.lnk"
-  Delete "$SMPROGRAMS\OfflineTunes\OfflineTunes.lnk"
-  Delete "$SMPROGRAMS\OfflineTunes\Uninstall.lnk"
-  RMDir "$SMPROGRAMS\OfflineTunes"
+  Delete "$DESKTOP\oTune.lnk"
+  Delete "$SMPROGRAMS\oTune\oTune.lnk"
+  Delete "$SMPROGRAMS\oTune\Uninstall.lnk"
+  RMDir "$SMPROGRAMS\oTune"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OfflineTunes"
+  DeleteRegKey HKCU "${UNINSTALL_KEY}"
 SectionEnd

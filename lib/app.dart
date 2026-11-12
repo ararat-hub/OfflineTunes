@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'data/db/app_database.dart';
+import 'core/strings.dart';
 import 'data/models/media_link.dart';
 import 'data/services/app_preferences.dart';
 import 'theme/theme_provider.dart';
@@ -19,7 +20,7 @@ class OfflinetunesApp extends StatelessWidget {
       child:
           HomeScreen(db: context.read<AppDatabase>(), initialLink: initialLink),
       builder: (_, configuration, home) => MaterialApp(
-        title: 'OfflineTunes',
+        title: AppStrings.appName,
         debugShowCheckedModeBanner: false,
         theme: configuration.$1,
         locale: configuration.$2,

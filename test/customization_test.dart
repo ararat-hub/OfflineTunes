@@ -299,7 +299,7 @@ void main() {
     await tester.runAsync(() => window.enterWidget(theme));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('OFFLINETUNES'), findsOneWidget);
+    expect(find.text('oTune'), findsOneWidget);
     await tester.binding.setSurfaceSize(const Size(360, 250));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

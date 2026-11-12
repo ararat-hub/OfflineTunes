@@ -459,9 +459,9 @@ const germanFrench = <String, (String, String)>{
     'Impossible d’ouvrir le fichier d’apparence.'
   ),
   'Обновления': ('Updates', 'Mises à jour'),
-  'Доступна новая версия OfflineTunes': (
-    'Eine neue OfflineTunes-Version ist verfügbar',
-    'Une nouvelle version d’OfflineTunes est disponible'
+  'Доступна новая версия {app}': (
+    'Eine neue Version von {app} ist verfügbar',
+    'Une nouvelle version de {app} est disponible'
   ),
   'Версия {version}': ('Version {version}', 'Version {version}'),
   'Позже': ('Später', 'Plus tard'),

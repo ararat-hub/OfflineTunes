@@ -1,6 +1,6 @@
-# OfflineTunes
+# oTune
 
-OfflineTunes is a Windows music player for local files, full tracks from Audius and Wikimedia Commons, and audio links. It has a floating widget with its own video or photo background.
+oTune is a Windows music player for local files, full tracks from Audius and Wikimedia Commons, and audio links. It has a floating widget with its own video or photo background.
 
 ## Install
 
@@ -16,7 +16,7 @@ Download the Windows x64 installer from [Releases](https://github.com/ararat-hub
 - Use **Settings → Shortcuts** to enable and change global Windows shortcuts for playback, volume, and the floating widget.
 - **Settings → Updates** checks for newer GitHub releases and lets you turn automatic prompts on or off.
 
-YouTube links play in the official embedded player when available. If YouTube returns error 101 or 150, OfflineTunes opens the video's standard YouTube watch page inside the app. On that page use the YouTube playback controls. Access still depends on YouTube's availability, account requirements, and regional restrictions.
+YouTube links play in the official embedded player when available. If YouTube returns error 101 or 150, oTune opens the video's standard YouTube watch page inside the app. On that page use the YouTube playback controls. Access still depends on YouTube's availability, account requirements, and regional restrictions.
 
 ## Build for Windows
 

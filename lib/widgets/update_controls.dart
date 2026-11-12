@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/localization.dart';
+import '../core/strings.dart';
 import '../data/services/update_service.dart';
 
 Future<void> showUpdate(BuildContext context, AppUpdate update) async {
@@ -10,7 +11,8 @@ Future<void> showUpdate(BuildContext context, AppUpdate update) async {
   final open = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(context.tr('Доступна новая версия OfflineTunes')),
+      title: Text(context.tr('Доступна новая версия {app}',
+          {'app': AppStrings.appName})),
       content:
           Text(context.tr('Версия {version}', {'version': update.version})),
       actions: [
