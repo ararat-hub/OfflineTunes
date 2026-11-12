@@ -32,14 +32,7 @@ class MusicCatalog {
       'iiprop': 'url|size|mime|extmetadata',
       'iiextmetadatafilter': 'Artist|LicenseShortName',
     });
-    final response = await _client.get(uri, headers: {
-      'User-Agent': userAgent
-    }).timeout(const Duration(seconds: 15));
-    if (response.statusCode != 200) {
-      throw http.ClientException(
-          'Wikimedia Commons: ${response.statusCode}', uri);
-    }
-    return parsePage(jsonDecode(utf8.decode(response.bodyBytes)));
+    return parsePage(await _request(uri));
   }
 
   Future<CatalogPage> _searchAudius(String term, int offset) async {
@@ -50,14 +43,29 @@ class MusicCatalog {
       'offset': '$offset',
       'app_name': 'OfflineTunes',
     });
+    return parseAudiusPage(await _request(uri), offset: offset, limit: limit);
+  }
+
+  Future<List<CatalogTrack>> popular() async {
+    final uri = Uri.https('api.audius.co', '/v1/tracks/trending', {
+      'time': 'allTime',
+      'limit': '100',
+      'app_name': 'OfflineTunes',
+    });
+    final page = parseAudiusPage(await _request(uri), offset: 0, limit: 100);
+    final tracks = page.tracks.where((track) => (track.plays ?? 0) > 0).toList()
+      ..sort((a, b) => b.plays!.compareTo(a.plays!));
+    return tracks.take(30).toList();
+  }
+
+  Future<Object?> _request(Uri uri) async {
     final response = await _client.get(uri, headers: {
       'User-Agent': userAgent
     }).timeout(const Duration(seconds: 15));
     if (response.statusCode != 200) {
-      throw http.ClientException('Audius: ${response.statusCode}', uri);
+      throw http.ClientException('${uri.host}: ${response.statusCode}', uri);
     }
-    return parseAudiusPage(jsonDecode(utf8.decode(response.bodyBytes)),
-        offset: offset, limit: limit);
+    return jsonDecode(utf8.decode(response.bodyBytes));
   }
 
   static CatalogPage parseAudiusPage(Object? payload,
@@ -86,6 +94,7 @@ class MusicCatalog {
         continue;
       }
       final user = item['user'];
+      final plays = item['play_count'];
       result.add(CatalogTrack(
         PlaybackTrack(
           path: Uri.https('api.audius.co', '/v1/tracks/$id/stream',
@@ -96,6 +105,7 @@ class MusicCatalog {
           sourcePage: Uri.https('audius.co', permalink).toString(),
         ),
         Duration(milliseconds: (duration * 1000).round()),
+        plays: plays is int && plays >= 0 ? plays : null,
       ));
     }
     return CatalogPage(
@@ -185,9 +195,10 @@ class MusicCatalog {
 }
 
 class CatalogTrack {
-  const CatalogTrack(this.track, this.duration);
+  const CatalogTrack(this.track, this.duration, {this.plays});
   final PlaybackTrack track;
   final Duration duration;
+  final int? plays;
 }
 
 class CatalogPage {

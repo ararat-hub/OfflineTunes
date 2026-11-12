@@ -398,10 +398,18 @@ const germanFrench = <String, (String, String)>{
   'Рекомендации': ('Empfehlungen', 'Recommandations'),
   'Подборки': ('Entdecken', 'Découvrir'),
   'Для вас': ('Für dich', 'Pour vous'),
-  'Классика': ('Klassik', 'Classique'),
-  'Джаз': ('Jazz', 'Jazz'),
-  'Электроника': ('Elektronisch', 'Électronique'),
-  'Фолк': ('Folk', 'Folk'),
+  'Популярное': ('Beliebt', 'Populaire'),
+  'Часто слушаете': ('Oft gehört', 'Écoutés en boucle'),
+  'По числу прослушиваний · Audius': (
+    'Nach Wiedergaben · Audius',
+    'Par nombre de lectures · Audius'
+  ),
+  'Прослушиваний: {count}': ('Wiedergaben: {count}', 'Lectures : {count}'),
+  'Здесь появятся треки, которые вы слушали несколько раз.': (
+    'Hier erscheinen Titel, die du mehrmals gehört hast.',
+    'Les pistes que vous écoutez plusieurs fois apparaîtront ici.',
+  ),
+  'Повторить': ('Erneut versuchen', 'Réessayer'),
   'Слушайте музыку или добавляйте треки в избранное, чтобы увидеть рекомендации из медиатеки.':
       (
     'Höre Musik oder füge Favoriten hinzu, um Empfehlungen aus deiner Mediathek zu erhalten.',

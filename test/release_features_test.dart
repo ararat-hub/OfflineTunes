@@ -72,6 +72,8 @@ void main() {
     await history.saved;
     final restored = ListeningHistory(prefs);
     expect(restored.recent.map((track) => track.path), ['a', 'b']);
+    expect(restored.mostPlayed.single.track.path, 'a');
+    expect(restored.mostPlayed.single.count, 2);
 
     Track candidate(String id, String artist, String genre) => Track(
           id: id,
@@ -122,6 +124,31 @@ void main() {
     expect(
         track.track.sourcePage, 'https://audius.co/bsdu/lofi-type-beat-14815');
     expect(track.duration.inSeconds, 334);
+  });
+
+  test('popular tracks are ordered by Audius play count', () async {
+    Map<String, Object> track(String id, int count) => {
+          'id': id,
+          'title': id,
+          'duration': 150,
+          'permalink': '/artist/$id',
+          'is_streamable': true,
+          'is_stream_gated': false,
+          'is_unlisted': false,
+          'play_count': count,
+        };
+    final catalog = MusicCatalog(MockClient((request) async {
+      expect(request.url.path, '/v1/tracks/trending');
+      expect(request.url.queryParameters['time'], 'allTime');
+      return http.Response(
+          jsonEncode({
+            'data': [track('A', 400), track('B', 7000), track('C', 1200)],
+          }),
+          200);
+    }));
+    final entries = await catalog.popular();
+    expect(entries.map((item) => item.track.title), ['B', 'C', 'A']);
+    expect(entries.map((item) => item.plays), [7000, 1200, 400]);
   });
 
   test(

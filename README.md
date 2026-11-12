@@ -8,7 +8,7 @@ Download the Windows x64 installer from [Releases](https://github.com/ararat-hub
 
 - Use **Add** to scan a music folder or play an audio or YouTube link.
 - **Search** finds music in your library, public streams on Audius, and openly licensed recordings on Wikimedia Commons. Online results link to their sources.
-- **Library** includes a recently played list. **Discover** suggests music based on artists and genres in your recent plays and favorites, and offers genre searches in the open catalogue.
+- **Library** includes a recently played list. **Discover** shows popular Audius tracks ranked by play count, tracks you play most often, and suggestions from your library.
 - **Downloads** previews a section planned for the mobile version.
 - Use **Settings → Appearance** to import video, photos, and TTF or OTF fonts. Choose a saved background and video loop range separately for the player and floating widget.
 - Use **Settings → Sound** to set the equalizer for audio tracks.

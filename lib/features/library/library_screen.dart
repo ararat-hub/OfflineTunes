@@ -4,11 +4,9 @@ import 'package:provider/provider.dart';
 
 import '../../core/localization.dart';
 import '../../data/db/app_database.dart';
-import '../../data/models/media_link.dart';
 import '../../data/models/playback_track.dart';
 import '../../data/services/audio_player_service.dart';
 import '../../data/services/listening_history.dart';
-import '../../data/services/youtube_player_service.dart';
 import '../../widgets/track_row.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -55,22 +53,13 @@ class _RecentlyPlayed extends StatelessWidget {
       return Center(
           child: Text(context.tr('Здесь появятся прослушанные треки.')));
     }
-    final audio = context.read<AudioPlayerService>();
-    final youtube = context.read<YoutubePlayerService>();
-    final audioTracks = tracks.where((track) => !track.youtube).toList();
     return ListView.builder(
       itemCount: tracks.length,
       itemBuilder: (context, index) {
         final track = tracks[index];
         return TrackRow(
             track: track,
-            onPlay: () {
-              if (track.youtube) {
-                youtube.open(MediaLink.parse(track.path));
-              } else {
-                audio.playQueue(audioTracks, index: audioTracks.indexOf(track));
-              }
-            });
+            onPlay: () => playHistoryTrack(context, tracks, track));
       },
     );
   }

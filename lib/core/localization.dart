@@ -48,10 +48,18 @@ const _translations = <String, (String, String)>{
   'Рекомендации': ('Recommendations', 'Recomendaciones'),
   'Подборки': ('Discover', 'Descubrir'),
   'Для вас': ('For you', 'Para ti'),
-  'Классика': ('Classical', 'Clásica'),
-  'Джаз': ('Jazz', 'Jazz'),
-  'Электроника': ('Electronic', 'Electrónica'),
-  'Фолк': ('Folk', 'Folk'),
+  'Популярное': ('Popular', 'Popular'),
+  'Часто слушаете': ('On repeat', 'En repetición'),
+  'По числу прослушиваний · Audius': (
+    'Ranked by plays · Audius',
+    'Por reproducciones · Audius'
+  ),
+  'Прослушиваний: {count}': ('Plays: {count}', 'Reproducciones: {count}'),
+  'Здесь появятся треки, которые вы слушали несколько раз.': (
+    'Tracks you play more than once will appear here.',
+    'Aquí aparecerán las pistas que escuches más de una vez.',
+  ),
+  'Повторить': ('Retry', 'Reintentar'),
   'Слушайте музыку или добавляйте треки в избранное, чтобы увидеть рекомендации из медиатеки.':
       (
     'Play music or add tracks to favorites for recommendations from your library.',

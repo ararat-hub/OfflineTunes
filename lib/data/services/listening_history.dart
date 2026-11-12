@@ -31,6 +31,15 @@ class ListeningHistory extends ChangeNotifier {
   List<PlaybackTrack> get recent =>
       _entries.map((entry) => entry.track).toList(growable: false);
 
+  List<({PlaybackTrack track, int count})> get mostPlayed {
+    final ranked = _entries.indexed.where((item) => item.$2.count > 1).toList()
+      ..sort((a, b) {
+        final count = b.$2.count.compareTo(a.$2.count);
+        return count == 0 ? a.$1.compareTo(b.$1) : count;
+      });
+    return ranked.take(30).map((item) => item.$2).toList(growable: false);
+  }
+
   void record(PlaybackTrack track) {
     if (track.path.isEmpty) return;
     final index =

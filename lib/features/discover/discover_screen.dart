@@ -18,30 +18,16 @@ class DiscoverScreen extends StatefulWidget {
 }
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
-  static const categories = [
-    ('Для вас', ''),
-    ('Классика', 'classical piano Beethoven'),
-    ('Джаз', 'jazz music'),
-    ('Электроника', 'electronic music'),
-    ('Фолк', 'folk music'),
+  static const _categories = [
+    ('Популярное', Icons.trending_up),
+    ('Часто слушаете', Icons.replay),
+    ('Для вас', Icons.auto_awesome_outlined),
   ];
   int _category = 0;
   final _client = http.Client();
   late final _catalog = MusicCatalog(_client);
   late final _library = widget.db.watchAllTracks();
-  Future<CatalogPage>? _online;
-  final _cache = <int, CatalogPage>{};
-
-  void _select(int index) {
-    setState(() {
-      _category = index;
-      _online = index == 0 ? null : _load(index);
-    });
-  }
-
-  Future<CatalogPage> _load(int index) async =>
-      _cache[index] ??= await _catalog.search(categories[index].$2,
-          source: index == 1 ? CatalogSource.commons : CatalogSource.audius);
+  late Future<List<CatalogTrack>> _popular = _catalog.popular();
 
   @override
   void dispose() {
@@ -55,64 +41,172 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Wrap(spacing: 8, runSpacing: 6, children: [
-          for (var i = 0; i < categories.length; i++)
-            ChoiceChip(
-              label: Text(context.tr(categories[i].$1)),
-              selected: _category == i,
-              onSelected: (_) => _select(i),
-            ),
-        ]),
+        LayoutBuilder(builder: (context, constraints) {
+          const spacing = 8.0;
+          final columns = constraints.maxWidth >= 520 ? 3 : 1;
+          final width =
+              (constraints.maxWidth - spacing * (columns - 1)) / columns;
+          return Wrap(spacing: spacing, runSpacing: spacing, children: [
+            for (var i = 0; i < _categories.length; i++)
+              SizedBox(
+                width: width,
+                child: _CategoryCard(
+                  label: context.tr(_categories[i].$1),
+                  icon: _categories[i].$2,
+                  selected: _category == i,
+                  onSelect: () => setState(() => _category = i),
+                ),
+              ),
+          ]);
+        }),
         const SizedBox(height: 12),
         Expanded(
-          child: _category == 0
-              ? StreamBuilder<List<Track>>(
-                  stream: _library,
-                  builder: (context, snapshot) {
-                    final queue = context
-                        .watch<ListeningHistory>()
-                        .recommend(snapshot.data ?? []);
-                    if (queue.isEmpty) {
-                      return Center(
+          child: switch (_category) {
+            0 => FutureBuilder<List<CatalogTrack>>(
+                future: _popular,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                        child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(context.tr('Каталог временно недоступен.')),
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _popular = _catalog.popular()),
+                          child: Text(context.tr('Повторить')),
+                        ),
+                      ],
+                    ));
+                  }
+                  final results = snapshot.data ?? [];
+                  if (results.isEmpty) {
+                    return Center(child: Text(context.tr('Ничего не найдено')));
+                  }
+                  final queue = results.map((item) => item.track).toList();
+                  return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
                           child: Text(
-                              context.tr(
-                                'Слушайте музыку или добавляйте треки в избранное, чтобы увидеть рекомендации из медиатеки.',
-                              ),
-                              textAlign: TextAlign.center));
-                    }
-                    return ListView.builder(
-                      itemCount: queue.length,
-                      itemBuilder: (_, index) => TrackRow(
-                        track: queue[index],
-                        onPlay: () => audio.playQueue(queue, index: index),
-                      ),
-                    );
-                  })
-              : FutureBuilder<CatalogPage>(
-                  future: _online,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final results = snapshot.data?.tracks ?? [];
-                    if (results.isEmpty) {
-                      return Center(
-                          child: Text(context.tr(snapshot.hasError
-                              ? 'Каталог временно недоступен.'
-                              : 'Ничего не найдено')));
-                    }
-                    final queue = results.map((item) => item.track).toList();
-                    return ListView.builder(
-                      itemCount: queue.length,
-                      itemBuilder: (_, index) => TrackRow(
-                        track: queue[index],
-                        duration: results[index].duration,
-                        onPlay: () => audio.playQueue(queue, index: index),
-                      ),
-                    );
-                  }),
+                              context.tr('По числу прослушиваний · Audius'),
+                              style: Theme.of(context).textTheme.labelMedium),
+                        ),
+                        Expanded(
+                            child: ListView.builder(
+                          itemCount: queue.length,
+                          itemBuilder: (_, index) => TrackRow(
+                            track: queue[index],
+                            duration: results[index].duration,
+                            playCount: results[index].plays,
+                            onPlay: () => audio.playQueue(queue, index: index),
+                          ),
+                        )),
+                      ]);
+                }),
+            1 => const _MostPlayed(),
+            _ => StreamBuilder<List<Track>>(
+                stream: _library,
+                builder: (context, snapshot) {
+                  final queue = context
+                      .watch<ListeningHistory>()
+                      .recommend(snapshot.data ?? []);
+                  if (queue.isEmpty) {
+                    return Center(
+                        child: Text(
+                            context.tr(
+                              'Слушайте музыку или добавляйте треки в избранное, чтобы увидеть рекомендации из медиатеки.',
+                            ),
+                            textAlign: TextAlign.center));
+                  }
+                  return ListView.builder(
+                    itemCount: queue.length,
+                    itemBuilder: (_, index) => TrackRow(
+                      track: queue[index],
+                      onPlay: () => audio.playQueue(queue, index: index),
+                    ),
+                  );
+                }),
+          },
         ),
       ]),
+    );
+  }
+}
+
+class _CategoryCard extends StatelessWidget {
+  const _CategoryCard({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: selected ? colors.primaryContainer : colors.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+              color: selected ? colors.primary : colors.outlineVariant),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onSelect,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Row(children: [
+              Icon(icon, size: 20, color: colors.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MostPlayed extends StatelessWidget {
+  const _MostPlayed();
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = context.watch<ListeningHistory>().mostPlayed;
+    if (entries.isEmpty) {
+      return Center(
+          child: Text(
+              context.tr(
+                'Здесь появятся треки, которые вы слушали несколько раз.',
+              ),
+              textAlign: TextAlign.center));
+    }
+    final tracks = entries.map((entry) => entry.track).toList();
+    return ListView.builder(
+      itemCount: entries.length,
+      itemBuilder: (context, index) => TrackRow(
+        track: tracks[index],
+        playCount: entries[index].count,
+        onPlay: () => playHistoryTrack(context, tracks, tracks[index]),
+      ),
     );
   }
 }
