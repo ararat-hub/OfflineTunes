@@ -6,7 +6,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
   audiotags
   file_selector_linux
-  flutter_media_metadata
   media_kit_video
   screen_retriever_linux
   sqlite3_flutter_libs

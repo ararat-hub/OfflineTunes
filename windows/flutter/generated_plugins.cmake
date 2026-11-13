@@ -7,7 +7,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audiotags
   connectivity_plus
   file_selector_windows
-  flutter_media_metadata
   just_audio_windows
   media_kit_libs_windows_video
   media_kit_video

@@ -109,11 +109,6 @@ class OfflineTracks extends ChangeNotifier {
         throw const FormatException('The catalog did not return an audio file');
       }
       final length = response.contentLength;
-      final extension = uri.host == 'api.audius.co'
-          ? '.mp3'
-          : p.extension(uri.path).toLowerCase();
-      final name =
-          '$id${RegExp(r'^\.[a-z0-9]{1,6}$').hasMatch(extension) ? extension : '.audio'}';
       var received = 0;
       var lastPercent = -1;
       final sink = pending.openWrite();
@@ -140,6 +135,8 @@ class OfflineTracks extends ChangeNotifier {
       if (received == 0 || (length != null && received != length)) {
         throw const FormatException('Incomplete download');
       }
+      final extension = await _extension(pending, uri);
+      final name = '$id$extension';
       audio = await pending.rename(p.join(_root.path, name));
       await manifest.writeAsString(
           jsonEncode({...track.toJson(), 'file': name}),
@@ -158,6 +155,37 @@ class OfflineTracks extends ChangeNotifier {
           } on FileSystemException {/* Temporary file can be removed later. */}
         }
       }
+    }
+  }
+
+  Future<String> _extension(File file, Uri uri) async {
+    if (uri.host == 'upload.wikimedia.org') {
+      final extension = p.extension(uri.path).toLowerCase();
+      return RegExp(r'^\.[a-z0-9]{1,6}$').hasMatch(extension)
+          ? extension
+          : '.audio';
+    }
+    final source = await file.open();
+    try {
+      final header = await source.read(12);
+      final signature = String.fromCharCodes(header);
+      if (signature.startsWith('fLaC')) return '.flac';
+      if (signature.startsWith('OggS')) return '.ogg';
+      if (signature.startsWith('RIFF') && signature.endsWith('WAVE')) {
+        return '.wav';
+      }
+      if (header.length > 8 && signature.substring(4, 8) == 'ftyp') {
+        return '.m4a';
+      }
+      if (signature.startsWith('ID3') ||
+          (header.length >= 2 &&
+              header[0] == 0xff &&
+              (header[1] & 0xe0) == 0xe0)) {
+        return '.mp3';
+      }
+      return '.audio';
+    } finally {
+      await source.close();
     }
   }
 

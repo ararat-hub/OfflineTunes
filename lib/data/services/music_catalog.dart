@@ -110,7 +110,7 @@ class MusicCatalog {
           artwork: artwork,
           downloadUrl: canDownload
               ? Uri.https('api.audius.co', '/v1/tracks/$id/download',
-                  {'app_name': 'oTune', 'quality': 'mp3'}).toString()
+                  {'app_name': 'oTune', 'original': 'false'}).toString()
               : null,
         ),
         Duration(milliseconds: (duration * 1000).round()),
