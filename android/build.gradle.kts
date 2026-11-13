@@ -14,6 +14,13 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
+    if (name == "audiotags") {
+        plugins.withId("com.android.library") {
+            extensions.configure<com.android.build.api.variant.LibraryAndroidComponentsExtension> {
+                finalizeDsl { it.compileSdk = 36 }
+            }
+        }
+    }
 }
 subprojects {
     project.evaluationDependsOn(":app")
