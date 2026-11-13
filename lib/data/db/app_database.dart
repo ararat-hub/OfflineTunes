@@ -32,6 +32,10 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteTrackById(String id) =>
       (delete(tracks)..where((t) => t.id.equals(id))).go();
 
+  Future<int> setFavorite(String id, bool favorite) =>
+      (update(tracks)..where((row) => row.id.equals(id)))
+          .write(TracksCompanion(isFavorite: Value(favorite ? 1 : 0)));
+
   Future<List<Track>> searchTracks(String query) async {
     final words = query.toLowerCase().trim().split(RegExp(r'\s+'));
     final local = await getAllTracks();

@@ -1,6 +1,7 @@
 import '../core/localization.dart';
 import 'package:flutter/material.dart';
 import 'player_controls.dart';
+import 'track_row.dart';
 import 'package:media_kit/media_kit.dart';
 import '../data/services/audio_player_service.dart';
 
@@ -97,24 +98,32 @@ class MiniPlayer extends StatelessWidget {
             onPressed: enabled ? player.cycleRepeat : null,
           ),
         ]);
-        final title = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                  player.currentTitle.isEmpty
-                      ? context.tr('Выберите трек')
-                      : player.currentTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              if (showArtist)
-                Text(player.currentArtist.isEmpty ? '—' : player.currentArtist,
+        final title = Row(children: [
+          TrackArtwork(track: player.currentTrack),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                Text(
+                    player.currentTitle.isEmpty
+                        ? context.tr('Выберите трек')
+                        : player.currentTitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        const TextStyle(color: Colors.white54, fontSize: 12)),
-            ]);
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                if (showArtist)
+                  Text(
+                      player.currentArtist.isEmpty ? '—' : player.currentArtist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12)),
+              ])),
+          if (player.currentTrack case final track?)
+            FavoriteTrackButton(track: track),
+        ]);
         return Container(
           color: Colors.black.withValues(alpha: opacity),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

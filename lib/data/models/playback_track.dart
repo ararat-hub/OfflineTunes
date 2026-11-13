@@ -8,7 +8,11 @@ class PlaybackTrack {
   final String? genre;
   final String? sourcePage;
   final String? license;
+  final String? artwork;
+  final String? downloadUrl;
   final bool youtube;
+  final String? libraryId;
+  final String? originalPath;
 
   const PlaybackTrack(
       {required this.path,
@@ -17,6 +21,10 @@ class PlaybackTrack {
       this.genre,
       this.sourcePage,
       this.license,
+      this.artwork,
+      this.downloadUrl,
+      this.libraryId,
+      this.originalPath,
       this.youtube = false});
 
   factory PlaybackTrack.fromTrack(Track track) {
@@ -34,6 +42,7 @@ class PlaybackTrack {
       title: track.title,
       artist: track.artist,
       genre: track.genre,
+      libraryId: track.id,
     );
   }
 
@@ -44,6 +53,10 @@ class PlaybackTrack {
         'genre': genre,
         'sourcePage': sourcePage,
         'license': license,
+        'artwork': artwork,
+        'downloadUrl': downloadUrl,
+        'libraryId': libraryId,
+        'originalPath': originalPath,
         'youtube': youtube,
       };
 
@@ -54,6 +67,26 @@ class PlaybackTrack {
         genre: json['genre'] as String?,
         sourcePage: json['sourcePage'] as String?,
         license: json['license'] as String?,
+        artwork: json['artwork'] as String?,
+        downloadUrl: json['downloadUrl'] as String?,
+        libraryId: json['libraryId'] as String?,
+        originalPath: json['originalPath'] as String?,
         youtube: json['youtube'] == true,
+      );
+
+  String get identity => originalPath ?? path;
+
+  PlaybackTrack withPath(String value) => PlaybackTrack(
+        path: value,
+        title: title,
+        artist: artist,
+        genre: genre,
+        sourcePage: sourcePage,
+        license: license,
+        artwork: artwork,
+        downloadUrl: downloadUrl,
+        youtube: youtube,
+        libraryId: libraryId,
+        originalPath: identity,
       );
 }

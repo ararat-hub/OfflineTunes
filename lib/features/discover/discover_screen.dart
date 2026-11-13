@@ -41,6 +41,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Selector<AudioPlayerService, String>(
+            selector: (_, player) => player.currentPath,
+            builder: (context, path, _) {
+              final current = audio.currentTrack;
+              if (current == null) return const SizedBox.shrink();
+              return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Material(
+                    color: Theme.of(context).colorScheme.surfaceContainer,
+                    borderRadius: BorderRadius.circular(10),
+                    child: ListTile(
+                        leading: TrackArtwork(track: current),
+                        title: Text(current.title,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(context.tr('Сейчас играет')),
+                        trailing: TrackActions(
+                            track: current, duration: audio.duration)),
+                  ));
+            }),
         LayoutBuilder(builder: (context, constraints) {
           const spacing = 8.0;
           final columns = constraints.maxWidth >= 520 ? 3 : 1;
@@ -103,7 +122,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                             track: queue[index],
                             duration: results[index].duration,
                             playCount: results[index].plays,
-                            onPlay: () => audio.playQueue(queue, index: index),
+                            onPlay: () =>
+                                playHistoryTrack(context, queue, queue[index]),
                           ),
                         )),
                       ]);
@@ -127,7 +147,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     itemCount: queue.length,
                     itemBuilder: (_, index) => TrackRow(
                       track: queue[index],
-                      onPlay: () => audio.playQueue(queue, index: index),
+                      onPlay: () =>
+                          playHistoryTrack(context, queue, queue[index]),
                     ),
                   );
                 }),
@@ -209,21 +230,4 @@ class _MostPlayed extends StatelessWidget {
       ),
     );
   }
-}
-
-class DownloadsScreen extends StatelessWidget {
-  const DownloadsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.download_outlined, size: 36),
-            const SizedBox(height: 12),
-            Text(context.tr('Загрузки появятся в мобильной версии.'),
-                textAlign: TextAlign.center),
-          ]),
-        ),
-      );
 }

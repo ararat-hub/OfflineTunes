@@ -1,22 +1,23 @@
 # oTune
 
-oTune is a Windows music player for local files, full tracks from Audius and Wikimedia Commons, and audio links. It has a floating widget with its own video or photo background.
+oTune is a music player for Windows and Android with local files, full tracks from online catalogs, and audio links. The compact player has its own video or photo background and can save named configurations.
 
 ## Install
 
-Download the Windows x64 installer from [Releases](https://github.com/ararat-hub/OfflineTunes/releases). YouTube playback uses Microsoft Edge WebView2 Runtime.
+Download the Windows x64 installer or the Android APK from [Releases](https://github.com/ararat-hub/OfflineTunes/releases). On Windows, embedded YouTube playback uses Microsoft Edge WebView2 Runtime. Android opens YouTube links in the YouTube app or browser.
 
-- Use **Add** to scan a music folder or play an audio or YouTube link.
-- **Search** finds music in your library, public streams on Audius, and openly licensed recordings on Wikimedia Commons. Online results link to their sources.
+- Use **Add** to scan a music folder on Windows, import audio files on Android, or open a link.
+- **Search** has All tracks, Library, and Favorites filters. The online sources and licensing information are available in the track details.
 - **Library** includes a recently played list. **Discover** shows popular Audius tracks ranked by play count, tracks you play most often, and suggestions from your library.
-- **Downloads** previews a section planned for the mobile version.
-- Use **Settings → Appearance** to import video, photos, and TTF or OTF fonts. Choose a saved background and video loop range separately for the player and floating widget.
+- On Android, tap the download icon on an eligible track. Open **Library → Downloads** to play or remove offline copies. Available downloads include openly licensed Wikimedia Commons recordings and Audius tracks whose creators have enabled public downloads.
+- Use **Settings → Appearance** to import video, photos, and TTF or OTF fonts. Choose a saved background and video loop range separately for the player and widget. Save widget configurations and reuse the videos or photos already imported. The Android widget opens inside oTune.
+- **Settings → Date and time** controls the time zone used for the clock, date, and weekday.
 - Use **Settings → Sound** to set the equalizer for audio tracks.
 - Use **Settings → Language** to select Russian, English, Spanish, German, or French.
 - Use **Settings → Shortcuts** to enable and change global Windows shortcuts for playback, volume, and the floating widget.
 - **Settings → Updates** checks for newer GitHub releases and lets you turn automatic prompts on or off.
 
-YouTube links play in the official embedded player when available. If YouTube returns error 101 or 150, oTune opens the video's standard YouTube watch page inside the app. On that page use the YouTube playback controls. Access still depends on YouTube's availability, account requirements, and regional restrictions.
+On Windows, YouTube links play in the official embedded player when available. If YouTube returns error 101 or 150, oTune opens the video's standard YouTube watch page inside the app. Use the YouTube playback controls on that page.
 
 ## Build for Windows
 
@@ -31,5 +32,9 @@ python installer/build_installer.py --makensis C:/path/to/makensis.exe --vc-runt
 ```
 
 The installer version comes from `pubspec.yaml`. The `--vc-runtime` argument takes the x64 Visual C++ redistributable directory under Visual Studio's `VC/Redist/MSVC` directory.
+
+## Build for Android
+
+Install Flutter and the Android SDK, then run `flutter pub get` and `flutter build apk --release`. To sign the release, provide `OTUNE_ANDROID_KEYSTORE` and `OTUNE_ANDROID_STORE_PASSWORD` in your build environment and use the key alias `otune`.
 
 The [design spec](docs/design-spec.md) describes the original project plan.

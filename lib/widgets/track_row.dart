@@ -7,6 +7,8 @@ import '../core/localization.dart';
 import '../data/models/playback_track.dart';
 import '../data/models/media_link.dart';
 import '../data/services/audio_player_service.dart';
+import '../data/services/favorite_tracks.dart';
+import '../data/services/offline_tracks.dart';
 import '../data/services/youtube_player_service.dart';
 
 void playHistoryTrack(
@@ -14,10 +16,14 @@ void playHistoryTrack(
   if (selected.youtube) {
     context.read<YoutubePlayerService>().open(MediaLink.parse(selected.path));
   } else {
-    final audio = tracks.where((track) => !track.youtube).toList();
+    final originals = tracks.where((track) => !track.youtube).toList();
+    final saved = context.read<OfflineTracks?>();
+    final audio = originals
+        .map((track) => saved?.localOrOriginal(track) ?? track)
+        .toList();
     context
         .read<AudioPlayerService>()
-        .playQueue(audio, index: audio.indexOf(selected));
+        .playQueue(audio, index: originals.indexOf(selected));
   }
 }
 
@@ -52,23 +58,153 @@ class TrackRow extends StatelessWidget {
         }),
     ];
     return ListTile(
-      leading:
-          Icon(track.youtube ? Icons.smart_display : Icons.play_circle_outline),
+      leading: TrackArtwork(track: track),
       title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: metadata.isEmpty
           ? null
           : Text(metadata.join(' · '),
               maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: trailing ??
-          (track.sourcePage == null
-              ? null
-              : IconButton(
-                  tooltip: context.tr('Источник записи'),
-                  icon: const Icon(Icons.open_in_new, size: 19),
-                  onPressed: () => launchUrl(Uri.parse(track.sourcePage!),
-                      mode: LaunchMode.externalApplication),
-                )),
+      trailing: trailing ?? TrackActions(track: track, duration: duration),
       onTap: onPlay,
     );
+  }
+}
+
+class TrackArtwork extends StatelessWidget {
+  const TrackArtwork({super.key, this.track, this.size = 42});
+  final PlaybackTrack? track;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Center(
+          child: Icon(
+              track?.youtube == true
+                  ? Icons.smart_display_outlined
+                  : Icons.music_note_rounded,
+              size: size * .48)),
+    );
+    final url = track?.artwork;
+    return ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: SizedBox.square(
+          dimension: size,
+          child: url == null
+              ? fallback
+              : Image.network(url,
+                  fit: BoxFit.cover,
+                  cacheWidth: size < 100 ? 128 : null,
+                  errorBuilder: (_, __, ___) => fallback),
+        ));
+  }
+}
+
+class FavoriteTrackButton extends StatelessWidget {
+  const FavoriteTrackButton({super.key, required this.track});
+  final PlaybackTrack track;
+
+  @override
+  Widget build(BuildContext context) {
+    final favorites = context.watch<FavoriteTracks?>();
+    if (favorites == null) return const SizedBox.shrink();
+    final selected = favorites.contains(track);
+    return IconButton(
+      tooltip: context.tr(selected ? 'Убрать из избранного' : 'В избранное'),
+      color: selected ? Theme.of(context).colorScheme.primary : null,
+      icon: Icon(
+          selected ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+          size: 20),
+      onPressed: () async {
+        try {
+          await favorites.toggle(track);
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(context.tr('Не удалось сохранить настройки.'))));
+          }
+        }
+      },
+    );
+  }
+}
+
+class TrackActions extends StatelessWidget {
+  const TrackActions({super.key, required this.track, this.duration});
+  final PlaybackTrack track;
+  final Duration? duration;
+
+  @override
+  Widget build(BuildContext context) {
+    final offline = context.watch<OfflineTracks?>();
+    final path = track.path;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      if (offline != null &&
+          track.downloadUrl != null &&
+          (Uri.tryParse(path)?.scheme == 'https'))
+        if (offline.isLoading(path))
+          SizedBox.square(
+              dimension: 24,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  value: offline.progress(path),
+                  semanticsLabel: context.tr('Скачивание')))
+        else
+          IconButton(
+              tooltip:
+                  context.tr(offline.contains(path) ? 'Скачано' : 'Скачать'),
+              icon: Icon(
+                  offline.contains(path)
+                      ? Icons.download_done_rounded
+                      : Icons.download_outlined,
+                  size: 21),
+              onPressed: offline.contains(path)
+                  ? null
+                  : () async {
+                      try {
+                        await offline.download(track);
+                      } catch (_) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(
+                                  context.tr('Не удалось скачать трек.'))));
+                        }
+                      }
+                    }),
+      FavoriteTrackButton(track: track),
+      IconButton(
+          tooltip: context.tr('О треке'),
+          icon: const Icon(Icons.info_outline_rounded, size: 19),
+          onPressed: () => showDialog<void>(
+              context: context,
+              builder: (dialog) => AlertDialog(
+                    title: Text(track.title),
+                    content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TrackArtwork(track: track, size: 104),
+                          const SizedBox(height: 12),
+                          if (track.artist.isNotEmpty) Text(track.artist),
+                          if (duration != null)
+                            Text(
+                                '${duration!.inMinutes}:${(duration!.inSeconds % 60).toString().padLeft(2, '0')}'),
+                          if (track.license != null) Text(track.license!),
+                          if (track.sourcePage != null)
+                            TextButton.icon(
+                                onPressed: () => launchUrl(
+                                    Uri.parse(track.sourcePage!),
+                                    mode: LaunchMode.externalApplication),
+                                icon: const Icon(Icons.open_in_new),
+                                label: Text(context.tr('Источник записи'))),
+                        ]),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(dialog),
+                          child: Text(context.tr('Закрыть')))
+                    ],
+                  ))),
+    ]);
   }
 }

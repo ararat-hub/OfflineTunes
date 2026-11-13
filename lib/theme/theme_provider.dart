@@ -104,6 +104,7 @@ class ThemeProvider extends ChangeNotifier {
     'importedVideoPath': '',
     'importedVideoName': '',
     'savedBackgrounds': '',
+    'savedWidgets': '',
     'savedFonts': '',
     'widgetMediaPath': '',
     'loopFrom': 0,
@@ -468,6 +469,70 @@ class ThemeProvider extends ChangeNotifier {
         if (path != widgetMediaPath) 'widgetLoopFrom': 0,
         if (path != widgetMediaPath) 'widgetLoopTo': 0,
       });
+
+  static const _widgetKeys = [
+    'widgetMediaPath',
+    'widgetLoopFrom',
+    'widgetLoopTo',
+    'widgetWidth',
+    'widgetHeight',
+    'widgetRadius',
+    'widgetDim',
+    'widgetStyle',
+    'widgetArtist',
+    'widgetProgress',
+    'widgetClock',
+    'widgetOnTop',
+  ];
+
+  Map<String, Map<String, dynamic>> get savedWidgets {
+    try {
+      final data = jsonDecode(_settings['savedWidgets'] as String);
+      if (data is Map<String, dynamic>) {
+        return data.map((name, value) =>
+            MapEntry(name, Map<String, dynamic>.from(value as Map)));
+      }
+    } catch (_) {/* Missing or invalid settings use an empty list. */}
+    return {};
+  }
+
+  Future<void> saveWidget(String name) async {
+    await ready;
+    final clean = name.trim();
+    if (clean.isEmpty) return;
+    final saved = savedWidgets;
+    final values = {for (final key in _widgetKeys) key: _settings[key]};
+    if (widgetMediaPath == null && mediaPath(compact: false) != null) {
+      values['widgetMediaPath'] = mediaPath(compact: false);
+      values['widgetLoopFrom'] = _settings['loopFrom'];
+      values['widgetLoopTo'] = _settings['loopTo'];
+    }
+    await change({
+      'savedWidgets': jsonEncode({...saved, clean: values})
+    });
+  }
+
+  Future<void> applyWidget(String name) async {
+    final values = savedWidgets[name];
+    if (values != null) {
+      await change({
+        for (final key in _widgetKeys)
+          if (values.containsKey(key)) key: values[key]
+      });
+    }
+  }
+
+  Future<void> importAvatar(String path) async {
+    final avatar = await _copyFile(path, imageExtensions, 'avatars');
+    final previous = avatarPath;
+    await change({'avatar': avatar.path});
+    if (previous != null && p.dirname(previous) == p.dirname(avatar.path)) {
+      try {
+        await File(previous).delete();
+      } on FileSystemException {/* The old copy may already be gone. */}
+    }
+  }
+
   static bool _isVideo(String path) => videoExtensions
       .contains(p.extension(path).replaceFirst('.', '').toLowerCase());
 
@@ -571,6 +636,7 @@ class ThemeProvider extends ChangeNotifier {
       'importedVideoName': importedVideoName,
       'savedBackgrounds': _settings['savedBackgrounds'],
       'savedFonts': _settings['savedFonts'],
+      'savedWidgets': _settings['savedWidgets'],
     });
   }
 

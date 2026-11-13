@@ -1,5 +1,4 @@
 import '../core/localization.dart';
-import '../core/strings.dart';
 import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -9,8 +8,9 @@ import '../theme/theme_provider.dart';
 import '../data/services/desktop_window_service.dart';
 import '../data/services/youtube_player_service.dart';
 import '../data/services/audio_player_service.dart';
-import 'mini_player.dart';
 import 'player_controls.dart';
+import 'app_backdrop.dart';
+import 'player_clock.dart';
 
 class AppearanceEditor extends StatefulWidget {
   const AppearanceEditor({super.key});
@@ -22,6 +22,64 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
   static const _bundledVideo = 'asset:///assets/backgrounds/aurora-4k.mp4';
   bool _importing = false;
   bool _widgetBackground = false;
+  final _style = GlobalKey(),
+      _background = GlobalKey(),
+      _interface = GlobalKey(),
+      _widget = GlobalKey();
+
+  Future<void> _saveWidget(ThemeProvider theme) async {
+    var name = '';
+    final selected = await showDialog<String>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+              title: Text(context.tr('Сохранить виджет')),
+              content: TextField(
+                  autofocus: true,
+                  maxLength: 40,
+                  onChanged: (value) => name = value,
+                  decoration: InputDecoration(labelText: context.tr('Имя')),
+                  onSubmitted: (value) {
+                    if (value.trim().isNotEmpty) Navigator.pop(dialog, value);
+                  }),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialog),
+                    child: Text(context.tr('Отмена'))),
+                FilledButton(
+                    onPressed: () {
+                      if (name.trim().isNotEmpty) Navigator.pop(dialog, name);
+                    },
+                    child: Text(context.tr('Сохранить')))
+              ],
+            ));
+    if (selected != null && mounted) {
+      try {
+        await theme.saveWidget(selected);
+      } catch (_) {
+        if (mounted) _fileError();
+      }
+    }
+  }
+
+  Future<void> _savedWidgets(ThemeProvider theme) async {
+    final chosen = await showDialog<String>(
+        context: context,
+        builder: (dialog) => SimpleDialog(
+              title: Text(context.tr('Сохранённые виджеты')),
+              children: [
+                for (final item in theme.savedWidgets.entries)
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(dialog, item.key),
+                    child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(item.key),
+                        subtitle: Text(theme.backgroundName(
+                            item.value['widgetMediaPath'] as String? ?? ''))),
+                  )
+              ],
+            ));
+    if (chosen != null && mounted) await theme.applyWidget(chosen);
+  }
 
   Future<void> _importFile(String label, List<String> extensions,
       {bool font = false}) async {
@@ -109,6 +167,24 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
         _widgetBackground ? theme.widgetMediaPath : theme.backgroundImagePath;
     final loop = theme.videoLoop(compact: _widgetBackground);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Wrap(spacing: 8, runSpacing: 4, children: [
+        for (final (key, label) in [
+          (_style, 'Готовый стиль'),
+          (_background, 'Свой фон'),
+          (_interface, 'Акцент и интерфейс'),
+          (_widget, 'Виджет плеера')
+        ])
+          TextButton(
+              onPressed: () {
+                final target = key.currentContext;
+                if (target != null) {
+                  Scrollable.ensureVisible(target,
+                      duration: const Duration(milliseconds: 240));
+                }
+              },
+              child: Text(context.tr(label))),
+      ]),
+      SizedBox(key: _style),
       _SectionTitle(
           context.tr('Готовый стиль'),
           context.tr(
@@ -172,296 +248,297 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
       }),
       const SizedBox(height: 28),
       _EditorCard(
+          key: _background,
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _SectionTitle(
-            context.tr('Свой фон'),
-            context.tr(
-                'Картинка или зацикленное видео. Исходный файл используется без повторного сжатия.')),
-        Wrap(spacing: 8, runSpacing: 6, children: [
-          ChoiceChip(
-            label: Text(context.tr('Основной плеер')),
-            selected: !_widgetBackground,
-            onSelected: _importing
-                ? null
-                : (_) => setState(() => _widgetBackground = false),
-          ),
-          ChoiceChip(
-            label: Text(context.tr('Виджет')),
-            selected: _widgetBackground,
-            onSelected: _importing
-                ? null
-                : (_) => setState(() => _widgetBackground = true),
-          ),
-        ]),
-        const SizedBox(height: 10),
-        if (_importing) const LinearProgressIndicator(minHeight: 2),
-        Wrap(spacing: 10, runSpacing: 10, children: [
-          FilledButton.tonalIcon(
-              onPressed: () => _setBackground(theme, _bundledVideo),
-              icon: const Icon(Icons.high_quality_outlined),
-              label: Text(context.tr('Готовый 4K-видеофон'))),
-          FilledButton.icon(
-              onPressed: _importing
-                  ? null
-                  : () =>
-                      _importFile('Видеофайлы', ThemeProvider.videoExtensions),
-              icon: const Icon(Icons.video_library_outlined),
-              label: Text(context.tr('Импортировать своё видео'))),
-          OutlinedButton.icon(
-              onPressed: _importing
-                  ? null
-                  : () =>
-                      _importFile('Изображения', ThemeProvider.imageExtensions),
-              icon: const Icon(Icons.image_outlined),
-              label: Text(context.tr('Выбрать фото'))),
-          if (theme.savedBackgrounds.isNotEmpty)
-            OutlinedButton.icon(
-                onPressed: () => _pickSaved(theme),
-                icon: const Icon(Icons.collections_outlined),
-                label: Text(context.tr('Сохранённые фоны'))),
-          OutlinedButton.icon(
-              onPressed: () => _setBackground(theme, null),
-              icon: const Icon(Icons.auto_awesome),
-              label: Text(context.tr(_widgetBackground
-                  ? 'Использовать фон плеера'
-                  : 'Вернуть готовый фон'))),
-        ]),
-        if (selectedMedia != null)
-          Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(theme.backgroundName(selectedMedia),
-                  style: const TextStyle(color: Colors.white70),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis)),
-        if (selectedMedia != null &&
-            theme.backgroundType(compact: _widgetBackground) ==
-                BackgroundType.video)
-          TextButton.icon(
-            onPressed: () => _editLoop(theme),
-            icon: const Icon(Icons.loop),
-            label: Text('${context.tr('Участок повтора')} · '
-                '${loop.from}–${loop.to?.toString() ?? context.tr('до конца')}'),
-          ),
-        const SizedBox(height: 16),
-        Wrap(spacing: 8, children: [
-          ChoiceChip(
-              label: Text(context.tr('Заполнить без искажения')),
-              selected: theme.backgroundFit == BoxFit.cover,
-              onSelected: (_) => theme.change({'fit': 'cover'})),
-          ChoiceChip(
-              label: Text(context.tr('Показать целиком')),
-              selected: theme.backgroundFit == BoxFit.contain,
-              onSelected: (_) => theme.change({'fit': 'contain'})),
-        ]),
-        SettingSlider(
-            label: context.tr('Затемнение фона'),
-            value: _widgetBackground ? theme.widgetDim : theme.dim,
-            max: .85,
-            display:
-                '${((_widgetBackground ? theme.widgetDim : theme.dim) * 100).round()}%',
-            onChanged: (v) =>
-                theme.change({_widgetBackground ? 'widgetDim' : 'dim': v})),
-        SettingSlider(
-            label: context.tr('Размытие'),
-            value: theme.blur,
-            max: 16,
-            display: theme.blur == 0
-                ? context.tr('Выключено')
-                : '${theme.blur.round()}',
-            onChanged: (v) => theme.change({'blur': v})),
-        SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.tr('Живой фон')),
-            subtitle:
-                Text(context.tr('Движение готовых тем и зацикливание видео')),
-            value: theme.motion,
-            onChanged: (v) => theme.change({'motion': v})),
-      ])),
+            _SectionTitle(
+                context.tr('Свой фон'),
+                context.tr(
+                    'Картинка или зацикленное видео. Исходный файл используется без повторного сжатия.')),
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              ChoiceChip(
+                label: Text(context.tr('Основной плеер')),
+                selected: !_widgetBackground,
+                onSelected: _importing
+                    ? null
+                    : (_) => setState(() => _widgetBackground = false),
+              ),
+              ChoiceChip(
+                label: Text(context.tr('Виджет')),
+                selected: _widgetBackground,
+                onSelected: _importing
+                    ? null
+                    : (_) => setState(() => _widgetBackground = true),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            if (_importing) const LinearProgressIndicator(minHeight: 2),
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              FilledButton.tonalIcon(
+                  onPressed: () => _setBackground(theme, _bundledVideo),
+                  icon: const Icon(Icons.high_quality_outlined),
+                  label: Text(context.tr('Готовый 4K-видеофон'))),
+              FilledButton.icon(
+                  onPressed: _importing
+                      ? null
+                      : () => _importFile(
+                          'Видеофайлы', ThemeProvider.videoExtensions),
+                  icon: const Icon(Icons.video_library_outlined),
+                  label: Text(context.tr('Импортировать своё видео'))),
+              OutlinedButton.icon(
+                  onPressed: _importing
+                      ? null
+                      : () => _importFile(
+                          'Изображения', ThemeProvider.imageExtensions),
+                  icon: const Icon(Icons.image_outlined),
+                  label: Text(context.tr('Выбрать фото'))),
+              if (theme.savedBackgrounds.isNotEmpty)
+                OutlinedButton.icon(
+                    onPressed: () => _pickSaved(theme),
+                    icon: const Icon(Icons.collections_outlined),
+                    label: Text(context.tr('Сохранённые фоны'))),
+              OutlinedButton.icon(
+                  onPressed: () => _setBackground(theme, null),
+                  icon: const Icon(Icons.auto_awesome),
+                  label: Text(context.tr(_widgetBackground
+                      ? 'Использовать фон плеера'
+                      : 'Вернуть готовый фон'))),
+            ]),
+            if (selectedMedia != null)
+              Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(theme.backgroundName(selectedMedia),
+                      style: const TextStyle(color: Colors.white70),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis)),
+            if (selectedMedia != null &&
+                theme.backgroundType(compact: _widgetBackground) ==
+                    BackgroundType.video)
+              TextButton.icon(
+                onPressed: () => _editLoop(theme),
+                icon: const Icon(Icons.loop),
+                label: Text('${context.tr('Участок повтора')} · '
+                    '${loop.from}–${loop.to?.toString() ?? context.tr('до конца')}'),
+              ),
+            const SizedBox(height: 16),
+            Wrap(spacing: 8, children: [
+              ChoiceChip(
+                  label: Text(context.tr('Заполнить без искажения')),
+                  selected: theme.backgroundFit == BoxFit.cover,
+                  onSelected: (_) => theme.change({'fit': 'cover'})),
+              ChoiceChip(
+                  label: Text(context.tr('Показать целиком')),
+                  selected: theme.backgroundFit == BoxFit.contain,
+                  onSelected: (_) => theme.change({'fit': 'contain'})),
+            ]),
+            SettingSlider(
+                label: context.tr('Затемнение фона'),
+                value: _widgetBackground ? theme.widgetDim : theme.dim,
+                max: .85,
+                display:
+                    '${((_widgetBackground ? theme.widgetDim : theme.dim) * 100).round()}%',
+                onChanged: (v) =>
+                    theme.change({_widgetBackground ? 'widgetDim' : 'dim': v})),
+            SettingSlider(
+                label: context.tr('Размытие'),
+                value: theme.blur,
+                max: 16,
+                display: theme.blur == 0
+                    ? context.tr('Выключено')
+                    : '${theme.blur.round()}',
+                onChanged: (v) => theme.change({'blur': v})),
+            SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(context.tr('Живой фон')),
+                subtitle: Text(
+                    context.tr('Движение готовых тем и зацикливание видео')),
+                value: theme.motion,
+                onChanged: (v) => theme.change({'motion': v})),
+          ])),
       const SizedBox(height: 18),
       _EditorCard(
+          key: _interface,
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _SectionTitle(context.tr('Акцент и интерфейс'), ''),
-        Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              ...ThemeProvider.presets.map((p) => p.accent),
-              Colors.white,
-              Colors.amberAccent
-            ]
-                .map((color) => Semantics(
-                    button: true,
-                    label: context.tr('Цвет {hex}',
-                        {'hex': color.toARGB32().toRadixString(16)}),
-                    selected: theme.accent == color,
-                    child: InkWell(
-                        onTap: () => theme.change({'accent': color.toARGB32()}),
-                        borderRadius: BorderRadius.circular(22),
-                        child: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                                color: color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: theme.accent == color
-                                        ? Colors.white
-                                        : Colors.transparent,
-                                    width: 3)),
-                            child: theme.accent == color
-                                ? const Icon(Icons.check,
-                                    color: Colors.black, size: 18)
-                                : null))))
-                .toList()),
-        const SizedBox(height: 18),
-        Text(context.tr('Шрифт')),
-        const SizedBox(height: 8),
-        Wrap(spacing: 8, runSpacing: 6, children: [
-          ...ThemeProvider.fonts.map((font) => ChoiceChip(
-              label: Text(font == 'System' ? context.tr('Системный') : font),
-              selected: theme.fontFamily == font,
-              onSelected: (_) => _setFont(theme, font))),
-          for (final font in theme.savedFonts)
-            ChoiceChip(
-              label: Text(font.name),
-              selected: theme.fontFamily == ThemeProvider.fontId(font),
-              onSelected: (_) => _setFont(theme, ThemeProvider.fontId(font)),
-            ),
-          OutlinedButton.icon(
-            onPressed: _importing
-                ? null
-                : () => _importFile('Шрифты', ThemeProvider.fontExtensions,
-                    font: true),
-            icon: const Icon(Icons.font_download_outlined),
-            label: Text(context.tr('Импортировать шрифт')),
-          ),
-        ]),
-        SettingSlider(
-            label: context.tr('Плотность панелей'),
-            value: theme.panelOpacity,
-            min: .05,
-            max: .95,
-            display: '${(theme.panelOpacity * 100).round()}%',
-            onChanged: (v) => theme.change({'panelOpacity': v})),
-        SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.tr('Часы на главной')),
-            value: theme.showClock,
-            onChanged: (v) => theme.change({'showClock': v})),
-      ])),
+            _SectionTitle(context.tr('Акцент и интерфейс'), ''),
+            Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  ...ThemeProvider.presets.map((p) => p.accent),
+                  Colors.white,
+                  Colors.amberAccent
+                ]
+                    .map((color) => Semantics(
+                        button: true,
+                        label: context.tr('Цвет {hex}',
+                            {'hex': color.toARGB32().toRadixString(16)}),
+                        selected: theme.accent == color,
+                        child: InkWell(
+                            onTap: () =>
+                                theme.change({'accent': color.toARGB32()}),
+                            borderRadius: BorderRadius.circular(22),
+                            child: Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: theme.accent == color
+                                            ? Colors.white
+                                            : Colors.transparent,
+                                        width: 3)),
+                                child: theme.accent == color
+                                    ? const Icon(Icons.check, color: Colors.black, size: 18)
+                                    : null))))
+                    .toList()),
+            const SizedBox(height: 18),
+            Text(context.tr('Шрифт')),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              ...ThemeProvider.fonts.map((font) => ChoiceChip(
+                  label:
+                      Text(font == 'System' ? context.tr('Системный') : font),
+                  selected: theme.fontFamily == font,
+                  onSelected: (_) => _setFont(theme, font))),
+              for (final font in theme.savedFonts)
+                ChoiceChip(
+                  label: Text(font.name),
+                  selected: theme.fontFamily == ThemeProvider.fontId(font),
+                  onSelected: (_) =>
+                      _setFont(theme, ThemeProvider.fontId(font)),
+                ),
+              OutlinedButton.icon(
+                onPressed: _importing
+                    ? null
+                    : () => _importFile('Шрифты', ThemeProvider.fontExtensions,
+                        font: true),
+                icon: const Icon(Icons.font_download_outlined),
+                label: Text(context.tr('Импортировать шрифт')),
+              ),
+            ]),
+            SettingSlider(
+                label: context.tr('Плотность панелей'),
+                value: theme.panelOpacity,
+                min: .05,
+                max: .95,
+                display: '${(theme.panelOpacity * 100).round()}%',
+                onChanged: (v) => theme.change({'panelOpacity': v})),
+            SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(context.tr('Часы на главной')),
+                value: theme.showClock,
+                onChanged: (v) => theme.change({'showClock': v})),
+          ])),
       const SizedBox(height: 18),
       _EditorCard(
+          key: _widget,
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _SectionTitle(
-            context.tr('Плавающий виджет'),
-            context.tr(
-                'Та же музыка и тот же фон в компактном окне поверх других приложений.')),
-        Align(
-            alignment: Alignment.center,
-            child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 460),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(theme.widgetRadius),
-                  child: Container(
-                      decoration: BoxDecoration(
-                          gradient:
-                              LinearGradient(colors: theme.preset.colors)),
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Row(children: [
-                              Icon(Icons.drag_indicator, size: 16),
-                              SizedBox(width: 8),
-                              Text(AppStrings.appName,
-                                  style: TextStyle(
-                                      letterSpacing: 2, fontSize: 11)),
-                              Spacer(),
-                              Icon(Icons.open_in_full, size: 16)
-                            ])),
-                        MiniPlayer(
-                            playerService: context.read<AudioPlayerService>(),
-                            compact: true,
-                            showArtist: theme.widgetArtist,
-                            showProgress: theme.widgetProgress,
-                            opacity: theme.widgetStyle == WidgetStyle.solid
-                                ? .85
-                                : theme.widgetStyle == WidgetStyle.minimal
-                                    ? 0
-                                    : theme.panelOpacity),
-                      ])),
-                ))),
-        const SizedBox(height: 16),
-        Wrap(spacing: 8, children: [
-          ChoiceChip(
-              label: Text(context.tr('Стекло')),
-              selected: theme.widgetStyle == WidgetStyle.glass,
-              onSelected: (_) => theme.change({'widgetStyle': 'glass'})),
-          ChoiceChip(
-              label: Text(context.tr('Матовый')),
-              selected: theme.widgetStyle == WidgetStyle.solid,
-              onSelected: (_) => theme.change({'widgetStyle': 'solid'})),
-          ChoiceChip(
-              label: Text(context.tr('Минимум')),
-              selected: theme.widgetStyle == WidgetStyle.minimal,
-              onSelected: (_) => theme.change({'widgetStyle': 'minimal'})),
-        ]),
-        SettingSlider(
-            label: context.tr('Ширина'),
-            value: theme.widgetWidth,
-            min: 360,
-            max: 800,
-            display: '${theme.widgetWidth.round()} px',
-            onChanged: (v) => theme.change({'widgetWidth': v.roundToDouble()})),
-        SettingSlider(
-            label: context.tr('Высота'),
-            value: theme.widgetHeight,
-            min: 250,
-            max: 700,
-            display: '${theme.widgetHeight.round()} px',
-            onChanged: (v) =>
-                theme.change({'widgetHeight': v.roundToDouble()})),
-        SettingSlider(
-            label: context.tr('Скругление'),
-            value: theme.widgetRadius,
-            max: 40,
-            display: '${theme.widgetRadius.round()} px',
-            onChanged: (v) => theme.change({'widgetRadius': v})),
-        SettingSlider(
-            label: context.tr('Затемнение виджета'),
-            value: theme.widgetDim,
-            max: .85,
-            display: '${(theme.widgetDim * 100).round()}%',
-            onChanged: (v) => theme.change({'widgetDim': v})),
-        SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.tr('Поверх остальных окон')),
-            value: theme.widgetOnTop,
-            onChanged: (v) => theme.change({'widgetOnTop': v})),
-        SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.tr('Показывать исполнителя')),
-            value: theme.widgetArtist,
-            onChanged: (v) => theme.change({'widgetArtist': v})),
-        SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.tr('Показывать перемотку')),
-            value: theme.widgetProgress,
-            onChanged: (v) => theme.change({'widgetProgress': v})),
-        SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.tr('Часы в виджете')),
-            value: theme.widgetClock,
-            onChanged: (v) => theme.change({'widgetClock': v})),
-        FilledButton.icon(
-            onPressed: () => context.read<DesktopWindowService>().enterWidget(
-                theme,
-                youtube: context.read<YoutubePlayerService>().active),
-            icon: const Icon(Icons.picture_in_picture_alt),
-            label: Text(context.tr('Открыть плавающий виджет'))),
-      ])),
+            _SectionTitle(
+                context.tr(
+                    Platform.isAndroid ? 'Виджет плеера' : 'Плавающий виджет'),
+                context.tr(Platform.isAndroid
+                    ? 'Компактный плеер с отдельным фоном и сохранёнными стилями.'
+                    : 'Та же музыка и тот же фон в компактном окне поверх других приложений.')),
+            _WidgetPreview(theme: theme),
+            const SizedBox(height: 16),
+            Wrap(spacing: 8, children: [
+              ChoiceChip(
+                  label: Text(context.tr('Стекло')),
+                  selected: theme.widgetStyle == WidgetStyle.glass,
+                  onSelected: (_) => theme.change({'widgetStyle': 'glass'})),
+              ChoiceChip(
+                  label: Text(context.tr('Матовый')),
+                  selected: theme.widgetStyle == WidgetStyle.solid,
+                  onSelected: (_) => theme.change({'widgetStyle': 'solid'})),
+              ChoiceChip(
+                  label: Text(context.tr('Минимум')),
+                  selected: theme.widgetStyle == WidgetStyle.minimal,
+                  onSelected: (_) => theme.change({'widgetStyle': 'minimal'})),
+            ]),
+            SettingSlider(
+                label: context.tr('Ширина'),
+                value: theme.widgetWidth,
+                min: 360,
+                max: 800,
+                display: '${theme.widgetWidth.round()} px',
+                onChanged: (v) =>
+                    theme.change({'widgetWidth': v.roundToDouble()})),
+            SettingSlider(
+                label: context.tr('Высота'),
+                value: theme.widgetHeight,
+                min: 250,
+                max: 700,
+                display: '${theme.widgetHeight.round()} px',
+                onChanged: (v) =>
+                    theme.change({'widgetHeight': v.roundToDouble()})),
+            SettingSlider(
+                label: context.tr('Скругление'),
+                value: theme.widgetRadius,
+                max: 40,
+                display: '${theme.widgetRadius.round()} px',
+                onChanged: (v) => theme.change({'widgetRadius': v})),
+            SettingSlider(
+                label: context.tr('Затемнение виджета'),
+                value: theme.widgetDim,
+                max: .85,
+                display: '${(theme.widgetDim * 100).round()}%',
+                onChanged: (v) => theme.change({'widgetDim': v})),
+            if (Platform.isWindows)
+              SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(context.tr('Поверх остальных окон')),
+                  value: theme.widgetOnTop,
+                  onChanged: (v) => theme.change({'widgetOnTop': v})),
+            SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(context.tr('Показывать исполнителя')),
+                value: theme.widgetArtist,
+                onChanged: (v) => theme.change({'widgetArtist': v})),
+            SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(context.tr('Показывать перемотку')),
+                value: theme.widgetProgress,
+                onChanged: (v) => theme.change({'widgetProgress': v})),
+            SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(context.tr('Часы в виджете')),
+                value: theme.widgetClock,
+                onChanged: (v) => theme.change({'widgetClock': v})),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton.icon(
+                  onPressed: () {
+                    if (Platform.isWindows) {
+                      context.read<DesktopWindowService>().enterWidget(theme,
+                          youtube: context.read<YoutubePlayerService>().active);
+                    } else {
+                      final player = context.read<AudioPlayerService>();
+                      showDialog<void>(
+                          context: context,
+                          builder: (dialog) => Dialog(
+                              child: _WidgetPreview(
+                                  theme: theme,
+                                  player: player,
+                                  interactive: true)));
+                    }
+                  },
+                  icon: const Icon(Icons.picture_in_picture_alt),
+                  label: Text(context.tr(Platform.isWindows
+                      ? 'Открыть плавающий виджет'
+                      : 'Открыть виджет'))),
+              OutlinedButton.icon(
+                  onPressed: () => _saveWidget(theme),
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: Text(context.tr('Сохранить виджет'))),
+              if (theme.savedWidgets.isNotEmpty)
+                OutlinedButton.icon(
+                    onPressed: () => _savedWidgets(theme),
+                    icon: const Icon(Icons.widgets_outlined),
+                    label: Text(context.tr('Сохранённые виджеты'))),
+            ]),
+          ])),
       const SizedBox(height: 20),
       TextButton.icon(
           onPressed: theme.resetAppearance,
@@ -469,6 +546,72 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
           label: Text(context.tr('Сбросить оформление'))),
     ]);
   }
+}
+
+class _WidgetPreview extends StatelessWidget {
+  const _WidgetPreview({required this.theme,this.player,this.interactive = false});
+  final ThemeProvider theme;
+  final AudioPlayerService? player;
+  final bool interactive;
+
+  @override
+  Widget build(BuildContext context) {
+    final audio = player ?? context.read<AudioPlayerService>();
+    final opacity = switch (theme.widgetStyle) {
+      WidgetStyle.glass => theme.panelOpacity,
+      WidgetStyle.solid => .85,
+      WidgetStyle.minimal => .15,
+    };
+    return LayoutBuilder(builder:(context,box) {
+      final scale = (box.maxWidth / 800).clamp(.1,.58);
+      final radius = BorderRadius.circular(theme.widgetRadius * scale);
+      return Center(child:ClipRRect(borderRadius:radius,child:SizedBox(
+        width:theme.widgetWidth * scale,height:theme.widgetHeight * scale,
+        child:Stack(fit:StackFit.expand,children:[
+          AppBackdrop(theme:theme,compact:true,preview:!interactive),
+          DecoratedBox(decoration:BoxDecoration(border:Border.all(color:Colors.white38),borderRadius:radius),
+            child:Padding(padding:const EdgeInsets.all(7),child:Column(children:[
+              const Align(alignment:Alignment.topLeft,child:Text('oTune',style:TextStyle(fontSize:10))),
+              if (theme.widgetClock) const Flexible(child:Center(child:PlayerClock(compact:true))),
+              if (!theme.widgetClock) const Spacer(),
+              ColoredBox(color:Colors.black.withValues(alpha:opacity),
+                child:_WidgetPreviewControls(audio:audio,theme:theme,interactive:interactive)),
+            ]))),
+        ]),
+      )));
+    });
+  }
+}
+
+class _WidgetPreviewControls extends StatelessWidget {
+  const _WidgetPreviewControls({required this.audio,required this.theme,required this.interactive});
+  final AudioPlayerService audio;
+  final ThemeProvider theme;
+  final bool interactive;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(listenable:audio,builder:(context,_) {
+    final duration = audio.duration.inMilliseconds;
+    return Column(mainAxisSize:MainAxisSize.min,children:[
+      Row(children:[
+        const SizedBox(width:5),
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Text(audio.currentTitle.isEmpty ? context.tr('Выберите трек') : audio.currentTitle,
+            style:const TextStyle(fontSize:11),maxLines:1,overflow:TextOverflow.ellipsis),
+          if (theme.widgetArtist && audio.currentArtist.isNotEmpty)
+            Text(audio.currentArtist,style:const TextStyle(fontSize:10,color:Colors.white70),maxLines:1,overflow:TextOverflow.ellipsis),
+        ])),
+        if (interactive)
+          IconButton(visualDensity:VisualDensity.compact,
+            tooltip:context.tr(audio.isPlaying ? 'Пауза' : 'Воспроизвести'),
+            onPressed:audio.hasTrack ? audio.togglePlayPause : null,
+            icon:Icon(audio.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,size:20))
+        else const Padding(padding:EdgeInsets.all(3),child:Icon(Icons.play_arrow_rounded,size:18)),
+      ]),
+      if (theme.widgetProgress)
+        LinearProgressIndicator(minHeight:2,value:duration == 0 ? 0 : (audio.position.inMilliseconds / duration).clamp(0.0,1.0)),
+    ]);
+  });
 }
 
 class _LoopDialog extends StatefulWidget {
@@ -588,7 +731,7 @@ class SettingSlider extends StatelessWidget {
 
 class _EditorCard extends StatelessWidget {
   final Widget child;
-  const _EditorCard({required this.child});
+  const _EditorCard({super.key, required this.child});
   @override
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.all(20),

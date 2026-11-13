@@ -1,12 +1,14 @@
 import '../../core/localization.dart';
 import 'package:file_selector/file_selector.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/appearance_editor.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.onSettings});
+  final VoidCallback? onSettings;
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
@@ -36,7 +38,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           extensions: ['jpg', 'jpeg', 'png', 'webp'])
     ]);
     if (file == null || !mounted) return;
-    await context.read<ThemeProvider>().change({'avatar': file.path});
+    try {
+      await context.read<ThemeProvider>().importAvatar(file.path);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(context.tr('Не удалось открыть файл оформления.'))));
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -64,6 +73,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
       const SizedBox(height: 24),
+      if (Platform.isAndroid && widget.onSettings != null)
+        ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: Text(context.tr('Настройки')),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: widget.onSettings),
       Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(

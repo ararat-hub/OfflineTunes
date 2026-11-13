@@ -1,13 +1,14 @@
-import 'package:drift/drift.dart' show Value;
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/localization.dart';
 import '../../data/db/app_database.dart';
 import '../../data/models/playback_track.dart';
-import '../../data/services/audio_player_service.dart';
 import '../../data/services/listening_history.dart';
 import '../../widgets/track_row.dart';
+import 'downloads_screen.dart';
+import '../favorites/favorites_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -17,38 +18,57 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  bool _recent = true;
+  int _section = 0;
+  bool _byTitle = false;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 8, runSpacing: 6, children: [
-            ChoiceChip(
-              label: Text(context.tr('Недавно прослушанные')),
-              selected: _recent,
-              onSelected: (_) => setState(() => _recent = true),
-            ),
-            ChoiceChip(
-              label: Text(context.tr('Все треки')),
-              selected: !_recent,
-              onSelected: (_) => setState(() => _recent = false),
-            ),
+            for (final (index, label) in [
+              'Недавно прослушанные',
+              'Все треки',
+              if (Platform.isAndroid) ...['Избранное', 'Загрузки']
+            ].indexed)
+              ChoiceChip(
+                  label: Text(context.tr(label)),
+                  selected: _section == index,
+                  onSelected: (_) => setState(() => _section = index)),
+            if (_section < 2)
+              DropdownButton<bool>(
+                  value: _byTitle,
+                  items: [
+                    DropdownMenuItem(
+                        value: false, child: Text(context.tr('По времени'))),
+                    DropdownMenuItem(
+                        value: true, child: Text(context.tr('По названию'))),
+                  ],
+                  onChanged: (value) => setState(() => _byTitle = value!)),
           ]),
           const SizedBox(height: 12),
           Expanded(
-              child:
-                  _recent ? const _RecentlyPlayed() : const _LibraryTracks()),
+              child: switch (_section) {
+            1 => _LibraryTracks(byTitle: _byTitle),
+            2 => const FavoritesScreen(),
+            3 => const DownloadsScreen(),
+            _ => _RecentlyPlayed(byTitle: _byTitle),
+          }),
         ]),
       );
 }
 
 class _RecentlyPlayed extends StatelessWidget {
-  const _RecentlyPlayed();
+  const _RecentlyPlayed({required this.byTitle});
+  final bool byTitle;
 
   @override
   Widget build(BuildContext context) {
     final tracks = context.watch<ListeningHistory>().recent;
+    if (byTitle) {
+      tracks.sort(
+          (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    }
     if (tracks.isEmpty) {
       return Center(
           child: Text(context.tr('Здесь появятся прослушанные треки.')));
@@ -66,7 +86,8 @@ class _RecentlyPlayed extends StatelessWidget {
 }
 
 class _LibraryTracks extends StatefulWidget {
-  const _LibraryTracks();
+  const _LibraryTracks({required this.byTitle});
+  final bool byTitle;
 
   @override
   State<_LibraryTracks> createState() => _LibraryTracksState();
@@ -88,6 +109,9 @@ class _LibraryTracksState extends State<_LibraryTracks> {
             for (final item in tracks)
               if (PlaybackTrack.fromTrack(item).path.isNotEmpty) item,
           ];
+          playable.sort(widget.byTitle
+              ? (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase())
+              : (a, b) => b.addedAt.compareTo(a.addedAt));
           if (playable.isEmpty) {
             return Center(
               child: Text(
@@ -101,23 +125,9 @@ class _LibraryTracksState extends State<_LibraryTracks> {
           return ListView.builder(
             itemCount: queue.length,
             itemBuilder: (context, index) {
-              final item = playable[index];
-              final favorite = item.isFavorite == 1;
               return TrackRow(
                 track: queue[index],
-                onPlay: () => context
-                    .read<AudioPlayerService>()
-                    .playQueue(queue, index: index),
-                trailing: IconButton(
-                  tooltip: context
-                      .tr(favorite ? 'Убрать из избранного' : 'В избранное'),
-                  onPressed: () => (_db.update(_db.tracks)
-                        ..where((row) => row.id.equals(item.id)))
-                      .write(
-                          TracksCompanion(isFavorite: Value(favorite ? 0 : 1))),
-                  icon: Icon(favorite ? Icons.favorite : Icons.favorite_border,
-                      color: favorite ? Colors.redAccent : null),
-                ),
+                onPlay: () => playHistoryTrack(context, queue, queue[index]),
               );
             },
           );

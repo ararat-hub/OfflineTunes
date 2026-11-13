@@ -13,7 +13,12 @@ import '../theme/theme_provider.dart';
 class AppBackdrop extends StatefulWidget {
   final ThemeProvider theme;
   final bool compact;
-  const AppBackdrop({super.key, required this.theme, this.compact = false});
+  final bool preview;
+  const AppBackdrop(
+      {super.key,
+      required this.theme,
+      this.compact = false,
+      this.preview = false});
   @override
   State<AppBackdrop> createState() => _AppBackdropState();
 }
@@ -50,7 +55,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   void _sync() {
     final theme = widget.theme;
     final backgroundType = theme.backgroundType(compact: widget.compact);
-    final animate = theme.motion && !_minimized;
+    final animate = theme.motion && !_minimized && !widget.preview;
     if (animate && backgroundType == BackgroundType.ambient) {
       _ambientTime.start();
       _ambientTimer ??= Timer.periodic(const Duration(milliseconds: 33), (_) {

@@ -18,7 +18,7 @@ class ScannerService {
       if (file is File) {
         final ext = file.path.split('.').last.toLowerCase();
         if (['mp3', 'flac', 'm4a', 'wav', 'ogg'].contains(ext)) {
-          final isAdded = await _processAudioFile(file.path);
+          final isAdded = await importAudioFile(file.path);
           if (isAdded) addedCount++;
         }
       }
@@ -27,7 +27,7 @@ class ScannerService {
     return addedCount;
   }
 
-  Future<bool> _processAudioFile(String filePath) async {
+  Future<bool> importAudioFile(String filePath, {String? originalName}) async {
     try {
       Tag? tag;
       try {
@@ -38,7 +38,7 @@ class ScannerService {
 
       final title = (tag?.title != null && tag!.title!.isNotEmpty)
           ? tag.title!
-          : filePath.split('\\').last.split('/').last;
+          : originalName ?? filePath.split('\\').last.split('/').last;
 
       final artist = (tag?.trackArtist != null && tag!.trackArtist!.isNotEmpty)
           ? tag.trackArtist!

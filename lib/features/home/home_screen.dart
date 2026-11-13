@@ -1,8 +1,8 @@
 import '../../core/localization.dart';
 import '../../core/strings.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../data/db/app_database.dart';
@@ -17,6 +17,8 @@ import '../../widgets/app_backdrop.dart';
 import '../../widgets/appearance_editor.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/player_controls.dart';
+import '../../widgets/player_clock.dart';
+import '../../widgets/track_row.dart';
 import '../../widgets/youtube_panel.dart';
 import '../../widgets/update_controls.dart';
 import '../search/search_screen.dart';
@@ -48,7 +50,6 @@ class _HomeScreenState extends State<HomeScreen> {
     'Настройки',
     'Ваш профиль',
     'Рекомендации',
-    'Загрузки',
   ];
   static const _navigation = [
     (0, Icons.home_outlined, Icons.home, 'Главная'),
@@ -56,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
     (2, Icons.library_music_outlined, Icons.library_music, 'Медиатека'),
     (3, Icons.favorite_border, Icons.favorite, 'Избранное'),
     (7, Icons.explore_outlined, Icons.explore, 'Подборки'),
-    (8, Icons.download_outlined, Icons.download, 'Загрузки'),
     (4, Icons.add_circle_outline, Icons.add_circle, 'Добавить'),
     (5, Icons.settings_outlined, Icons.settings, 'Настройки'),
   ];
@@ -168,9 +168,8 @@ class _HomeScreenState extends State<HomeScreen> {
       const FavoritesScreen(),
       const AddMusicScreen(),
       const SettingsScreen(),
-      const ProfileScreen(),
+      ProfileScreen(onSettings: () => _navigate(5)),
       DiscoverScreen(db: widget.db),
-      const DownloadsScreen(),
     ];
     return Scaffold(
         backgroundColor: Colors.transparent,
@@ -181,27 +180,75 @@ class _HomeScreenState extends State<HomeScreen> {
             AppBackdrop(theme: theme, compact: window.compact),
             if (window.compact)
               DragToResizeArea(child: _FloatingPlayer(onEdit: _editFromWidget))
+            else if (Platform.isAndroid)
+              Positioned.fill(
+                  child: SafeArea(
+                      child: Column(children: [
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                    child: Row(children: [
+                      Image.asset('assets/images/otune-icon.png',
+                          width: 34, height: 34),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: Text(context.tr(_titles[_selectedIndex]),
+                              style: Theme.of(context).textTheme.titleLarge,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis)),
+                      IconButton(
+                          tooltip: context.tr('Добавить музыку'),
+                          onPressed: () {
+                            if (youtube.active) unawaited(youtube.close());
+                            _navigate(4);
+                          },
+                          icon: const Icon(Icons.add_rounded)),
+                      IconButton(
+                          tooltip: context.tr('Мой профиль'),
+                          onPressed: () {
+                            if (youtube.active) unawaited(youtube.close());
+                            _navigate(6);
+                          },
+                          icon:
+                              ProfileAvatar(path: theme.avatarPath, size: 30)),
+                    ])),
+                Expanded(
+                    child: youtube.active
+                        ? const YoutubePanel(fill: true)
+                        : pages[_selectedIndex]),
+                if (!youtube.active)
+                  _MobilePlayerBar(
+                      audio: context.read<AudioPlayerService>(),
+                      opacity: theme.panelOpacity),
+                NavigationBar(
+                  height: 62,
+                  backgroundColor: Colors.black.withValues(alpha: .68),
+                  selectedIndex: [0, 1, 2, 7].contains(_selectedIndex)
+                      ? [0, 1, 2, 7].indexOf(_selectedIndex)
+                      : 2,
+                  onDestinationSelected: (index) {
+                    if (youtube.active) unawaited(youtube.close());
+                    _navigate([0, 1, 2, 7][index]);
+                  },
+                  destinations: [
+                    for (final item in _navigation
+                        .where((item) => [0, 1, 2, 7].contains(item.$1)))
+                      NavigationDestination(
+                          icon: Icon(item.$2),
+                          selectedIcon: Icon(item.$3),
+                          label: context.tr(item.$4)),
+                  ],
+                ),
+              ])))
             else
               Row(children: [
                 Container(
-                    width: 100,
+                    width: 152,
                     decoration: BoxDecoration(
                         color:
                             Colors.black.withValues(alpha: theme.panelOpacity),
                         border: const Border(
                             right: BorderSide(color: Colors.white12))),
                     child: Column(children: [
-                      const SizedBox(height: 18),
-                      Semantics(
-                          button: true,
-                          label: context.tr('Мой профиль'),
-                          child: InkWell(
-                              onTap: () => _navigate(6),
-                              customBorder: const CircleBorder(),
-                              child: Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: ProfileAvatar(
-                                      path: theme.avatarPath, size: 44)))),
                       const SizedBox(height: 14),
                       Expanded(
                           child: SingleChildScrollView(
@@ -210,7 +257,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         backgroundColor: Colors.transparent,
                         selectedIndex:
                             navigationIndex < 0 ? null : navigationIndex,
-                        labelType: NavigationRailLabelType.all,
+                        extended: true,
+                        minExtendedWidth: 150,
                         groupAlignment: -1,
                         onDestinationSelected: (index) =>
                             _navigate(_navigation[index].$1),
@@ -234,6 +282,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? null
                               : () => window.enterWidget(theme,
                                   youtube: youtube.active)),
+                      TextButton.icon(
+                          onPressed: () => _navigate(6),
+                          icon: ProfileAvatar(path: theme.avatarPath, size: 30),
+                          label: Text(context.tr('Профиль'))),
                       const SizedBox(height: 12),
                     ])),
                 Expanded(
@@ -371,7 +423,7 @@ class _FloatingPlayer extends StatelessWidget {
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           if (theme.widgetClock)
-                                            const _Clock(compact: true),
+                                            const PlayerClock(compact: true),
                                           Icon(Icons.graphic_eq,
                                               color: theme.accent
                                                   .withValues(alpha: .8),
@@ -386,6 +438,72 @@ class _FloatingPlayer extends StatelessWidget {
           ],
         ]));
   }
+}
+
+class _MobilePlayerBar extends StatelessWidget {
+  const _MobilePlayerBar({required this.audio, required this.opacity});
+  final AudioPlayerService audio;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+      listenable: audio,
+      builder: (context, _) {
+        final track = audio.currentTrack;
+        if (track == null) return const SizedBox.shrink();
+        return Material(
+            color: Colors.black.withValues(alpha: opacity.clamp(.48, .85)),
+            child: ListTile(
+              leading: TrackArtwork(track: track, size: 38),
+              title: Text(track.title,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(track.artist,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                FavoriteTrackButton(track: track),
+                IconButton(
+                    tooltip:
+                        context.tr(audio.isPlaying ? 'Пауза' : 'Воспроизвести'),
+                    icon: Icon(audio.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded),
+                    onPressed: audio.togglePlayPause),
+              ]),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (context) => Scaffold(
+                        appBar:
+                            AppBar(title: Text(context.tr('Сейчас играет'))),
+                        body: SafeArea(
+                            child: Center(
+                                child: ListenableBuilder(
+                                    listenable: audio,
+                                    builder: (context, _) {
+                                      final current = audio.currentTrack;
+                                      return SingleChildScrollView(
+                                          child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                            TrackArtwork(
+                                                track: current,
+                                                size:
+                                                    (MediaQuery.sizeOf(context)
+                                                                .width -
+                                                            48)
+                                                        .clamp(120, 320)),
+                                            const SizedBox(height: 16),
+                                            MiniPlayer(
+                                                playerService: audio,
+                                                compact: true,
+                                                opacity: 0),
+                                            if (current != null)
+                                              TrackActions(
+                                                  track: current,
+                                                  duration: audio.duration),
+                                          ]));
+                                    }))),
+                      ))),
+            ));
+      });
 }
 
 class _Dashboard extends StatelessWidget {
@@ -425,12 +543,13 @@ class _Dashboard extends StatelessWidget {
                     greeting,
                     if (theme.showClock)
                       const Padding(
-                          padding: EdgeInsets.only(top: 16), child: _Clock())
+                          padding: EdgeInsets.only(top: 16),
+                          child: PlayerClock())
                   ]);
             }
             return Row(children: [
               Expanded(child: greeting),
-              if (theme.showClock) const _Clock()
+              if (theme.showClock) const PlayerClock()
             ]);
           }),
           const SizedBox(height: 28),
@@ -522,46 +641,4 @@ class _Dashboard extends StatelessWidget {
               onTap: () => onNavigate(5)),
         ]);
   }
-}
-
-class _Clock extends StatefulWidget {
-  final bool compact;
-  const _Clock({this.compact = false});
-  @override
-  State<_Clock> createState() => _ClockState();
-}
-
-class _ClockState extends State<_Clock> {
-  Timer? _timer;
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(DateFormat('HH:mm').format(DateTime.now()),
-                style: TextStyle(
-                    fontSize: widget.compact ? 24 : 52,
-                    fontWeight: FontWeight.w200,
-                    letterSpacing: -2)),
-            if (!widget.compact)
-              Text(
-                  DateFormat('d MMMM · EEEE',
-                          Localizations.localeOf(context).languageCode)
-                      .format(DateTime.now()),
-                  style: const TextStyle(fontSize: 11, color: Colors.white60)),
-          ]);
 }

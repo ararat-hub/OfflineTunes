@@ -95,6 +95,10 @@ class MusicCatalog {
       }
       final user = item['user'];
       final plays = item['play_count'];
+      final images = item['artwork'];
+      final artwork = images is Map ? _https(images['150x150']) : null;
+      final canDownload =
+          item['is_downloadable'] == true && item['is_download_gated'] == false;
       result.add(CatalogTrack(
         PlaybackTrack(
           path: Uri.https('api.audius.co', '/v1/tracks/$id/stream',
@@ -103,6 +107,11 @@ class MusicCatalog {
           artist: user is Map ? user['name']?.toString() ?? '' : '',
           genre: item['genre']?.toString(),
           sourcePage: Uri.https('audius.co', permalink).toString(),
+          artwork: artwork,
+          downloadUrl: canDownload
+              ? Uri.https('api.audius.co', '/v1/tracks/$id/download',
+                  {'app_name': 'oTune', 'quality': 'mp3'}).toString()
+              : null,
         ),
         Duration(milliseconds: (duration * 1000).round()),
         plays: plays is int && plays >= 0 ? plays : null,
@@ -172,6 +181,7 @@ class MusicCatalog {
           artist: _metadata(metadata, 'Artist'),
           sourcePage: source.toString(),
           license: license,
+          downloadUrl: media.toString(),
         ),
         Duration(milliseconds: (duration * 1000).round()),
       ));
@@ -191,6 +201,14 @@ class MusicCatalog {
         .replaceAll('&nbsp;', ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  static String? _https(Object? value) {
+    if (value is! String) return null;
+    final uri = Uri.tryParse(value);
+    return uri != null && uri.scheme == 'https' && uri.host.isNotEmpty
+        ? value
+        : null;
   }
 }
 

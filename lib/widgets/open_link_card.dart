@@ -1,6 +1,8 @@
 import '../core/localization.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../data/models/media_link.dart';
 import '../data/services/audio_player_service.dart';
 import '../data/services/youtube_player_service.dart';
@@ -33,7 +35,15 @@ class _OpenLinkCardState extends State<OpenLinkCard> {
       final youtube = context.read<YoutubePlayerService>();
       final fromLink = context.tr('По ссылке');
       if (link.isYoutube) {
-        await youtube.open(link);
+        if (Platform.isAndroid) {
+          await audio.pause();
+          if (!await launchUrl(link.uri,
+              mode: LaunchMode.externalApplication)) {
+            throw StateError('Could not open YouTube');
+          }
+        } else {
+          await youtube.open(link);
+        }
       } else {
         await youtube.close();
         await audio.playUrl(link.uri.toString(),

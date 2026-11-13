@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:timezone/timezone.dart' as tz;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -75,6 +76,31 @@ class AppPreferences extends ChangeNotifier {
   Locale get locale {
     final code = _prefs.getString('interface_language');
     return Locale(languages.containsKey(code) ? code! : 'ru');
+  }
+
+  static List<String> get timeZones => tz.timeZoneDatabase.locations.keys
+      .where((zone) => zone.contains('/') && !zone.startsWith('Etc/'))
+      .toList()
+    ..sort();
+
+  String get timeZone => _prefs.getString('clock_time_zone') ?? '';
+
+  DateTime clockTime([DateTime? instant]) {
+    final now = instant ?? DateTime.now();
+    final zone = tz.timeZoneDatabase.locations[timeZone];
+    return zone == null ? now.toLocal() : tz.TZDateTime.from(now, zone);
+  }
+
+  Future<void> setTimeZone(String value) async {
+    if (value == timeZone ||
+        (value.isNotEmpty &&
+            !tz.timeZoneDatabase.locations.containsKey(value))) {
+      return;
+    }
+    if (!await _prefs.setString('clock_time_zone', value)) {
+      throw StateError('Could not save the time zone');
+    }
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> setLanguage(String code) async {

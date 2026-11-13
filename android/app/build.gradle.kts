@@ -29,11 +29,19 @@ android {
         versionName = flutter.versionName
     }
 
+    val releaseStore = System.getenv("OTUNE_ANDROID_KEYSTORE")
+    if (!releaseStore.isNullOrBlank()) {
+        signingConfigs.create("production") {
+            storeFile = file(releaseStore)
+            storePassword = System.getenv("OTUNE_ANDROID_STORE_PASSWORD")
+            keyAlias = "otune"
+            keyPassword = storePassword
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("production")
         }
     }
 }

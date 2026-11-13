@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as time_zones;
 import 'data/db/app_database.dart';
 import 'data/models/media_link.dart';
 import 'data/services/audio_player_service.dart';
 import 'data/services/listening_history.dart';
+import 'data/services/offline_tracks.dart';
+import 'data/services/favorite_tracks.dart';
 import 'data/services/update_service.dart';
 import 'data/services/app_preferences.dart';
 import 'package:media_kit/media_kit.dart';
@@ -25,6 +28,7 @@ void main(List<String> arguments) async {
     await windowManager.setMinimumSize(const Size(480, 600));
   }
   await initializeDateFormatting();
+  time_zones.initializeTimeZones();
 
   final db = AppDatabase();
   final theme = ThemeProvider();
@@ -47,6 +51,9 @@ void main(List<String> arguments) async {
         Provider<AppDatabase>.value(value: db),
         ChangeNotifierProvider<AppPreferences>(create: (_) => preferences),
         ChangeNotifierProvider(create: (_) => ListeningHistory(prefs)),
+        ChangeNotifierProvider(create: (_) => FavoriteTracks(db, prefs)),
+        if (Platform.isAndroid)
+          ChangeNotifierProvider(create: (_) => OfflineTracks()),
         Provider(
             create: (_) => UpdateService(prefs),
             dispose: (_, updates) => updates.dispose()),

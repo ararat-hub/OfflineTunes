@@ -22,7 +22,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Оформление',
       'Звук',
       'Язык',
-      'Горячие клавиши',
+      'Дата и время',
+      if (context.watch<AppPreferences>().supportsHotkeys) 'Горячие клавиши',
       'Обновления'
     ];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -45,16 +46,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: SingleChildScrollView(
           key: ValueKey(_section),
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-          child: switch (_section) {
-            1 => const SoundSettings(),
-            2 => const _LanguageSettings(),
-            3 => const _HotkeySettings(),
-            4 => const UpdateControls(),
+          child: switch (labels[_section]) {
+            'Звук' => const SoundSettings(),
+            'Язык' => const _LanguageSettings(),
+            'Дата и время' => const _TimeSettings(),
+            'Горячие клавиши' => const _HotkeySettings(),
+            'Обновления' => const UpdateControls(),
             _ => const AppearanceEditor(),
           },
         ),
       ),
     ]);
+  }
+}
+
+class _TimeSettings extends StatelessWidget {
+  const _TimeSettings();
+
+  @override
+  Widget build(BuildContext context) {
+    final preferences = context.watch<AppPreferences>();
+    return ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(context.tr('Часовой пояс')),
+        subtitle: Text(preferences.timeZone.isEmpty
+            ? context.tr('Как на устройстве')
+            : preferences.timeZone.replaceAll('_', ' ')),
+        trailing: const Icon(Icons.keyboard_arrow_right),
+        onTap: () async {
+          final value = await showDialog<String>(
+              context: context, builder: (_) => const _TimeZonePicker());
+          if (value == null || !context.mounted) return;
+          try {
+            await preferences.setTimeZone(value);
+          } catch (_) {
+            if (context.mounted) _settingsError(context);
+          }
+        });
+  }
+}
+
+class _TimeZonePicker extends StatefulWidget {
+  const _TimeZonePicker();
+
+  @override
+  State<_TimeZonePicker> createState() => _TimeZonePickerState();
+}
+
+class _TimeZonePickerState extends State<_TimeZonePicker> {
+  late final List<String> _zones = ['', 'Etc/UTC', ...AppPreferences.timeZones];
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = context.watch<AppPreferences>().timeZone;
+    String label(String zone) => switch (zone) {
+          '' => context.tr('Как на устройстве'),
+          'Etc/UTC' => 'UTC',
+          _ => zone.replaceAll('_', ' ')
+        };
+    final results = _zones
+        .where((zone) => label(zone).toLowerCase().contains(_query))
+        .toList();
+    return AlertDialog(
+        title: Text(context.tr('Часовой пояс')),
+        content: SizedBox(
+            width: 420,
+            height: 360,
+            child: Column(children: [
+              TextField(
+                  onChanged: (value) =>
+                      setState(() => _query = value.trim().toLowerCase()),
+                  decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: context.tr('Найти часовой пояс'))),
+              const SizedBox(height: 8),
+              Expanded(
+                  child: ListView.builder(
+                      itemCount: results.length,
+                      itemBuilder: (context, index) {
+                        final zone = results[index];
+                        return ListTile(
+                            title: Text(label(zone)),
+                            selected: zone == selected,
+                            trailing: zone == selected
+                                ? const Icon(Icons.check)
+                                : null,
+                            onTap: () => Navigator.pop(context, zone));
+                      })),
+            ])),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(context.tr('Отмена')))
+        ]);
   }
 }
 

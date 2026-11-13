@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -113,6 +114,7 @@ class AudioPlayerService extends ChangeNotifier {
   String get currentTitle => _current?.title ?? '';
   String get currentArtist => _current?.artist ?? '';
   String get currentPath => _current?.path ?? '';
+  PlaybackTrack? get currentTrack => _current;
   String? get error => _error;
 
   void _notify() {
@@ -128,7 +130,15 @@ class AudioPlayerService extends ChangeNotifier {
       await _player.setVolume(_volume * 100);
       final path = _prefs!.getString('player_last_path') ?? '';
       if (path.isNotEmpty && !_isLegacyPreview(path)) {
-        _current = PlaybackTrack(
+        final saved = _prefs!.getString('player_last_track');
+        if (saved != null) {
+          try {
+            final track = PlaybackTrack.fromJson(
+                jsonDecode(saved) as Map<String, dynamic>);
+            if (track.path == path) _current = track;
+          } catch (_) {/* Fall back to the fields from older releases. */}
+        }
+        _current ??= PlaybackTrack(
             path: path,
             title: _prefs!.getString('player_last_title') ?? 'Без названия',
             artist: _prefs!.getString('player_last_artist') ?? '');
@@ -351,6 +361,7 @@ class AudioPlayerService extends ChangeNotifier {
     final position = _completed ? Duration.zero : _position;
     if (current == null || _prefs == null) return;
     await _prefs!.setString('player_last_path', current.path);
+    await _prefs!.setString('player_last_track', jsonEncode(current.toJson()));
     await _prefs!.setString('player_last_title', current.title);
     await _prefs!.setString('player_last_artist', current.artist);
     await _prefs!.setInt('player_last_position_ms', position.inMilliseconds);

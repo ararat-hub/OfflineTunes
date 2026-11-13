@@ -34,6 +34,8 @@ VIAddVersionKey "ProductVersion" "${APP_VERSION}"
 VIAddVersionKey "LegalCopyright" "oTune"
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "..\windows\runner\resources\app_icon.ico"
+!define MUI_UNICON "..\windows\runner\resources\app_icon.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\oTune.exe"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 !insertmacro MUI_PAGE_WELCOME

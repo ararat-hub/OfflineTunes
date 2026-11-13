@@ -6,8 +6,10 @@ import '../../core/localization.dart';
 import '../../widgets/track_row.dart';
 import '../../data/db/app_database.dart';
 import '../../data/models/playback_track.dart';
-import '../../data/services/audio_player_service.dart';
 import '../../data/services/music_catalog.dart';
+import '../../data/services/favorite_tracks.dart';
+
+enum _Scope { all, library, favorites }
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, required this.db});
@@ -28,13 +30,17 @@ class _SearchScreenState extends State<SearchScreen> {
   final _offsets = <CatalogSource, int>{};
   bool _loading = false;
   bool _catalogFailed = false;
+  _Scope _scope = _Scope.all;
 
   Future<void> _search({bool append = false}) async {
     final query = append ? _submitted : _query.text.trim();
     if (append && (_offsets.isEmpty || _loading)) return;
     final requests = append
         ? Map.of(_offsets)
-        : {for (final source in CatalogSource.values) source: 0};
+        : {
+            if (_scope == _Scope.all)
+              for (final source in CatalogSource.values) source: 0
+          };
     final generation = ++_generation;
     setState(() {
       if (!append) {
@@ -43,10 +49,10 @@ class _SearchScreenState extends State<SearchScreen> {
         _offsets.clear();
       }
       _submitted = query;
-      _loading = query.isNotEmpty;
+      _loading = query.isNotEmpty && _scope != _Scope.favorites;
       _catalogFailed = false;
     });
-    if (query.isEmpty) return;
+    if (query.isEmpty || _scope == _Scope.favorites) return;
 
     Future<void> loadLocal() async {
       try {
@@ -108,7 +114,13 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final audio = context.read<AudioPlayerService>();
+    final words = _submitted.toLowerCase().split(RegExp(r'\s+'));
+    final favoriteMatches = _scope == _Scope.favorites
+        ? context.watch<FavoriteTracks>().tracks.where((track) {
+            final text = '${track.title} ${track.artist}'.toLowerCase();
+            return words.every(text.contains);
+          }).toList()
+        : const <PlaybackTrack>[];
     final emptyOnline = _online.values.every((items) => items.isEmpty);
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 18),
@@ -126,30 +138,60 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
+        Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(spacing: 8, children: [
+              for (final item in const [
+                (_Scope.all, 'Все треки'),
+                (_Scope.library, 'Медиатека'),
+                (_Scope.favorites, 'Избранное')
+              ])
+                ChoiceChip(
+                    label: Text(context.tr(item.$2)),
+                    selected: _scope == item.$1,
+                    onSelected: (_) {
+                      _scope = item.$1;
+                      _search();
+                    }),
+            ])),
+        const SizedBox(height: 8),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         Expanded(
           child: CustomScrollView(
             slivers: [
-              if (_local.isNotEmpty) ...[
+              if (_scope == _Scope.favorites && favoriteMatches.isNotEmpty)
+                SliverList.builder(
+                    itemCount: favoriteMatches.length,
+                    itemBuilder: (_, index) => TrackRow(
+                          track: favoriteMatches[index],
+                          onPlay: () => playHistoryTrack(
+                              context, favoriteMatches, favoriteMatches[index]),
+                        )),
+              if (_scope != _Scope.favorites && _local.isNotEmpty) ...[
                 _label(context.tr('В вашей медиатеке')),
                 SliverList.builder(
                   itemCount: _local.length,
                   itemBuilder: (_, i) => TrackRow(
                     track: _local[i],
-                    onPlay: () => audio.playQueue(_local, index: i),
+                    onPlay: () => playHistoryTrack(context, _local, _local[i]),
                   ),
                 ),
               ],
               for (final source in CatalogSource.values)
                 if (_online[source]?.isNotEmpty == true)
-                  ..._onlineSection(context, audio, source, _online[source]!),
+                  _onlineSection(context, _online[source]!),
               if (_catalogFailed && emptyOnline)
                 _label(context.tr('Каталог временно недоступен.')),
-              if (!_loading && !_catalogFailed && _local.isEmpty && emptyOnline)
-                _label(context.tr(_submitted.isEmpty
-                    ? 'Введите запрос и нажмите Enter или стрелочку'
-                    : 'Ничего не найдено')),
+              if (!_loading &&
+                  !_catalogFailed &&
+                  _local.isEmpty &&
+                  emptyOnline &&
+                  favoriteMatches.isEmpty)
+                _label(context.tr(
+                    _submitted.isEmpty && _scope != _Scope.favorites
+                        ? 'Введите запрос и нажмите Enter или стрелочку'
+                        : 'Ничего не найдено')),
               if (!_loading && _offsets.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Align(
@@ -167,23 +209,16 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  List<Widget> _onlineSection(BuildContext context, AudioPlayerService audio,
-      CatalogSource source, List<CatalogTrack> items) {
-    final title = source == CatalogSource.audius
-        ? 'Полные треки · Audius'
-        : 'Полные записи · Wikimedia Commons';
+  Widget _onlineSection(BuildContext context, List<CatalogTrack> items) {
     final queue = items.map((item) => item.track).toList();
-    return [
-      _label(context.tr(title)),
-      SliverList.builder(
-        itemCount: items.length,
-        itemBuilder: (_, i) => TrackRow(
-          track: queue[i],
-          duration: items[i].duration,
-          onPlay: () => audio.playQueue(queue, index: i),
-        ),
+    return SliverList.builder(
+      itemCount: items.length,
+      itemBuilder: (_, i) => TrackRow(
+        track: queue[i],
+        duration: items[i].duration,
+        onPlay: () => playHistoryTrack(context, queue, queue[i]),
       ),
-    ];
+    );
   }
 
   SliverToBoxAdapter _label(String text) => SliverToBoxAdapter(

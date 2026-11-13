@@ -22,6 +22,44 @@ extension OfflineTunesLocalization on BuildContext {
 final _placeholder = RegExp(r'\{(\w+)\}');
 
 const _translations = <String, (String, String)>{
+  'Дата и время': ('Date and time', 'Fecha y hora'),
+  'Часовой пояс': ('Time zone', 'Zona horaria'),
+  'Как на устройстве': (
+    'Use device time zone',
+    'Usar zona horaria del dispositivo'
+  ),
+  'Найти часовой пояс': ('Find a time zone', 'Buscar zona horaria'),
+  'Скачать': ('Download', 'Descargar'),
+  'Скачано': ('Downloaded', 'Descargado'),
+  'Скачивание': ('Downloading', 'Descargando'),
+  'Удалить загрузку': ('Remove download', 'Eliminar descarga'),
+  'Не удалось скачать трек.': (
+    'Could not download the track.',
+    'No se pudo descargar la pista.'
+  ),
+  'Не удалось удалить загрузку.': (
+    'Could not remove the download.',
+    'No se pudo eliminar la descarga.'
+  ),
+  'Скачайте доступные треки через поиск или подборки, чтобы слушать их без интернета.':
+      (
+    'Download available tracks from Search or Discover to listen offline.',
+    'Descarga pistas de Buscar o Descubrir para escucharlas sin conexión.'
+  ),
+  'О треке': ('Track details', 'Información de la pista'),
+  'Сейчас играет': ('Now playing', 'Sonando ahora'),
+  'По времени': ('By date', 'Por fecha'),
+  'По названию': ('By title', 'Por título'),
+  'Сохранить виджет': ('Save widget', 'Guardar widget'),
+  'Сохранённые виджеты': ('Saved widgets', 'Widgets guardados'),
+  'Виджет плеера': ('Player widget', 'Widget del reproductor'),
+  'Открыть виджет': ('Open widget', 'Abrir widget'),
+  'Компактный плеер с отдельным фоном и сохранёнными стилями.': (
+    'A compact player with its own background and saved styles.',
+    'Un reproductor compacto con su propio fondo y estilos guardados.'
+  ),
+  'Добавить с устройства': ('Add from device', 'Añadir del dispositivo'),
+  'Выбрать аудиофайлы': ('Choose audio files', 'Elegir archivos de audio'),
   'Полные треки · Audius': (
     'Full tracks · Audius',
     'Pistas completas · Audius'
