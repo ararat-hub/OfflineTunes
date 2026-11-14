@@ -22,6 +22,19 @@ extension OfflineTunesLocalization on BuildContext {
 final _placeholder = RegExp(r'\{(\w+)\}');
 
 const _translations = <String, (String, String)>{
+  'Скачать обновление': ('Download update', 'Descargar actualización'),
+  'Сохранённые фоны виджета': (
+    'Saved widget backgrounds',
+    'Fondos guardados del widget'
+  ),
+  'Сохранённые фоны плеера': (
+    'Saved player backgrounds',
+    'Fondos guardados del reproductor'
+  ),
+  'Для загрузки нужна прямая HTTPS-ссылка на аудиофайл.': (
+    'Enter a direct HTTPS link to an audio file to download it.',
+    'Introduce un enlace HTTPS directo a un archivo de audio.'
+  ),
   'Дата и время': ('Date and time', 'Fecha y hora'),
   'Часовой пояс': ('Time zone', 'Zona horaria'),
   'Как на устройстве': (

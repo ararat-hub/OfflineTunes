@@ -107,6 +107,9 @@ class ThemeProvider extends ChangeNotifier {
     'savedWidgets': '',
     'savedFonts': '',
     'widgetMediaPath': '',
+    'widgetFit': '',
+    'widgetBlur': -1.0,
+    'widgetMotion': '',
     'loopFrom': 0,
     'loopTo': 0,
     'widgetLoopFrom': 0,
@@ -256,6 +259,23 @@ class ThemeProvider extends ChangeNotifier {
   BoxFit get backgroundFit =>
       _settings['fit'] == 'contain' ? BoxFit.contain : BoxFit.cover;
   bool get motion => _settings['motion'] as bool;
+  BoxFit backdropFit(bool compact) =>
+      switch (compact ? _settings['widgetFit'] : '') {
+        'contain' => BoxFit.contain,
+        'cover' => BoxFit.cover,
+        _ => backgroundFit,
+      };
+  double backdropBlur(bool compact) {
+    final value = _settings['widgetBlur'] as double;
+    return compact && value >= 0 ? value : blur;
+  }
+
+  bool backdropMotion(bool compact) =>
+      switch (compact ? _settings['widgetMotion'] : '') {
+        'on' => true,
+        'off' => false,
+        _ => motion,
+      };
   double get panelOpacity => _settings['panelOpacity'] as double;
   bool get showClock => _settings['showClock'] as bool;
   String get profileName => _settings['name'] as String;
@@ -286,6 +306,18 @@ class ThemeProvider extends ChangeNotifier {
         scaffoldBackgroundColor: inputs.$2,
         fontFamily: 'Segoe UI');
     final theme = base.copyWith(
+      splashFactory: Platform.isWindows ? InkRipple.splashFactory : null,
+      hoverColor: Platform.isWindows ? inputs.$1.withValues(alpha: .10) : null,
+      highlightColor:
+          Platform.isWindows ? inputs.$1.withValues(alpha: .18) : null,
+      focusColor: Platform.isWindows ? inputs.$1.withValues(alpha: .14) : null,
+      navigationRailTheme: Platform.isWindows
+          ? NavigationRailThemeData(
+              indicatorShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9)),
+              indicatorColor: inputs.$1.withValues(alpha: .20),
+            )
+          : null,
       textTheme: switch (inputs.$3) {
         'System' => base.textTheme,
         final family when _loadedFonts.contains(family) =>
@@ -371,6 +403,7 @@ class ThemeProvider extends ChangeNotifier {
       'blur': [.0, 16.0],
       'panelOpacity': [.05, .95],
       'widgetDim': [.0, .85],
+      'widgetBlur': [-1.0, 16.0],
       'widgetRadius': [0.0, 40.0],
       'widgetWidth': [360.0, 800.0],
       'widgetHeight': [250.0, 700.0]
@@ -472,6 +505,9 @@ class ThemeProvider extends ChangeNotifier {
 
   static const _widgetKeys = [
     'widgetMediaPath',
+    'widgetFit',
+    'widgetBlur',
+    'widgetMotion',
     'widgetLoopFrom',
     'widgetLoopTo',
     'widgetWidth',

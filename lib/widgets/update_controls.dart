@@ -11,8 +11,8 @@ Future<void> showUpdate(BuildContext context, AppUpdate update) async {
   final open = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text(context.tr('Доступна новая версия {app}',
-          {'app': AppStrings.appName})),
+      title: Text(context
+          .tr('Доступна новая версия {app}', {'app': AppStrings.appName})),
       content:
           Text(context.tr('Версия {version}', {'version': update.version})),
       actions: [
@@ -21,13 +21,20 @@ Future<void> showUpdate(BuildContext context, AppUpdate update) async {
             child: Text(context.tr('Позже'))),
         FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(context.tr('Открыть релиз на GitHub'))),
+            child: Text(context.tr(update.download == null
+                ? 'Открыть релиз на GitHub'
+                : 'Скачать обновление'))),
       ],
     ),
   );
   await updates.markOffered(update);
   if (open == true) {
-    await launchUrl(update.page, mode: LaunchMode.externalApplication);
+    if (!await launchUrl(update.download ?? update.page,
+            mode: LaunchMode.externalApplication) &&
+        context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('Не удалось открыть ссылку.'))));
+    }
   }
 }
 

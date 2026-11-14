@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playback_track.dart';
+import '../models/media_link.dart';
 import 'music_catalog.dart';
 
 class OfflineTracks extends ChangeNotifier {
@@ -78,10 +79,13 @@ class OfflineTracks extends ChangeNotifier {
       throw StateError('Download storage is unavailable');
     }
     final uri = Uri.tryParse(track.downloadUrl ?? '');
+    final catalog = uri != null &&
+        const {'api.audius.co', 'upload.wikimedia.org'}.contains(uri.host);
     if (track.youtube ||
         uri == null ||
         uri.scheme != 'https' ||
-        !const {'api.audius.co', 'upload.wikimedia.org'}.contains(uri.host) ||
+        uri.userInfo.isNotEmpty ||
+        (!catalog && !MediaLink.isDirectAudioFile(uri)) ||
         contains(track.path) ||
         isLoading(track.path)) {
       return;
@@ -159,12 +163,6 @@ class OfflineTracks extends ChangeNotifier {
   }
 
   Future<String> _extension(File file, Uri uri) async {
-    if (uri.host == 'upload.wikimedia.org') {
-      final extension = p.extension(uri.path).toLowerCase();
-      return RegExp(r'^\.[a-z0-9]{1,6}$').hasMatch(extension)
-          ? extension
-          : '.audio';
-    }
     final source = await file.open();
     try {
       final header = await source.read(12);
@@ -183,7 +181,8 @@ class OfflineTracks extends ChangeNotifier {
               (header[1] & 0xe0) == 0xe0)) {
         return '.mp3';
       }
-      return '.audio';
+      final extension = p.extension(uri.path).toLowerCase();
+      return MediaLink.isDirectAudioFile(uri) ? extension : '.audio';
     } finally {
       await source.close();
     }

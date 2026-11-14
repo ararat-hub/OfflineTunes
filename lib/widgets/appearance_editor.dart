@@ -11,6 +11,7 @@ import '../data/services/audio_player_service.dart';
 import 'player_controls.dart';
 import 'app_backdrop.dart';
 import 'player_clock.dart';
+import 'background_thumbnail.dart';
 
 class AppearanceEditor extends StatefulWidget {
   const AppearanceEditor({super.key});
@@ -64,19 +65,27 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
   Future<void> _savedWidgets(ThemeProvider theme) async {
     final chosen = await showDialog<String>(
         context: context,
-        builder: (dialog) => SimpleDialog(
+        builder: (dialog) => AlertDialog(
               title: Text(context.tr('Сохранённые виджеты')),
-              children: [
-                for (final item in theme.savedWidgets.entries)
-                  SimpleDialogOption(
-                    onPressed: () => Navigator.pop(dialog, item.key),
-                    child: ListTile(
+              content: SizedBox(
+                width: 420,
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final item in theme.savedWidgets.entries)
+                      ListTile(
                         contentPadding: EdgeInsets.zero,
+                        onTap: () => Navigator.pop(dialog, item.key),
+                        leading: BackgroundThumbnail(
+                            path:
+                                item.value['widgetMediaPath'] as String? ?? ''),
                         title: Text(item.key),
                         subtitle: Text(theme.backgroundName(
-                            item.value['widgetMediaPath'] as String? ?? ''))),
-                  )
-              ],
+                            item.value['widgetMediaPath'] as String? ?? '')),
+                      ),
+                  ],
+                ),
+              ),
             ));
     if (chosen != null && mounted) await theme.applyWidget(chosen);
   }
@@ -123,19 +132,36 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
           : theme.setBackgroundImagePath(path);
 
   Future<void> _pickSaved(ThemeProvider theme) async {
-    final files = theme.savedBackgrounds;
+    final files = [
+      AppearanceFile(_bundledVideo, context.tr('Готовый 4K-видеофон')),
+      ...theme.savedBackgrounds,
+    ];
+    final compact = _widgetBackground;
+    final active = compact ? theme.widgetMediaPath : theme.backgroundImagePath;
     final selection = await showDialog<AppearanceFile>(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: Text(context.tr('Сохранённые фоны')),
-        children: [
-          for (final file in files)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, file),
-              child:
-                  Text(file.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-            ),
-        ],
+      builder: (context) => AlertDialog(
+        title: Text(context.tr(
+            compact ? 'Сохранённые фоны виджета' : 'Сохранённые фоны плеера')),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final file in files)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () => Navigator.pop(context, file),
+                  leading: BackgroundThumbnail(path: file.path),
+                  title: Text(file.name,
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  trailing: file.path == active
+                      ? const Icon(Icons.check, size: 20)
+                      : null,
+                ),
+            ],
+          ),
+        ),
       ),
     );
     if (selection != null && mounted) {
@@ -292,11 +318,10 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
                           'Изображения', ThemeProvider.imageExtensions),
                   icon: const Icon(Icons.image_outlined),
                   label: Text(context.tr('Выбрать фото'))),
-              if (theme.savedBackgrounds.isNotEmpty)
-                OutlinedButton.icon(
-                    onPressed: () => _pickSaved(theme),
-                    icon: const Icon(Icons.collections_outlined),
-                    label: Text(context.tr('Сохранённые фоны'))),
+              OutlinedButton.icon(
+                  onPressed: () => _pickSaved(theme),
+                  icon: const Icon(Icons.collections_outlined),
+                  label: Text(context.tr('Сохранённые фоны'))),
               OutlinedButton.icon(
                   onPressed: () => _setBackground(theme, null),
                   icon: const Icon(Icons.auto_awesome),
@@ -307,10 +332,15 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             if (selectedMedia != null)
               Padding(
                   padding: const EdgeInsets.only(top: 10),
-                  child: Text(theme.backgroundName(selectedMedia),
-                      style: const TextStyle(color: Colors.white70),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis)),
+                  child: Row(children: [
+                    BackgroundThumbnail(path: selectedMedia),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: Text(theme.backgroundName(selectedMedia),
+                            style: const TextStyle(color: Colors.white70),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis)),
+                  ])),
             if (selectedMedia != null &&
                 theme.backgroundType(compact: _widgetBackground) ==
                     BackgroundType.video)
@@ -324,12 +354,16 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             Wrap(spacing: 8, children: [
               ChoiceChip(
                   label: Text(context.tr('Заполнить без искажения')),
-                  selected: theme.backgroundFit == BoxFit.cover,
-                  onSelected: (_) => theme.change({'fit': 'cover'})),
+                  selected:
+                      theme.backdropFit(_widgetBackground) == BoxFit.cover,
+                  onSelected: (_) => theme.change(
+                      {_widgetBackground ? 'widgetFit' : 'fit': 'cover'})),
               ChoiceChip(
                   label: Text(context.tr('Показать целиком')),
-                  selected: theme.backgroundFit == BoxFit.contain,
-                  onSelected: (_) => theme.change({'fit': 'contain'})),
+                  selected:
+                      theme.backdropFit(_widgetBackground) == BoxFit.contain,
+                  onSelected: (_) => theme.change(
+                      {_widgetBackground ? 'widgetFit' : 'fit': 'contain'})),
             ]),
             SettingSlider(
                 label: context.tr('Затемнение фона'),
@@ -341,19 +375,22 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
                     theme.change({_widgetBackground ? 'widgetDim' : 'dim': v})),
             SettingSlider(
                 label: context.tr('Размытие'),
-                value: theme.blur,
+                value: theme.backdropBlur(_widgetBackground),
                 max: 16,
-                display: theme.blur == 0
+                display: theme.backdropBlur(_widgetBackground) == 0
                     ? context.tr('Выключено')
-                    : '${theme.blur.round()}',
-                onChanged: (v) => theme.change({'blur': v})),
+                    : '${theme.backdropBlur(_widgetBackground).round()}',
+                onChanged: (v) => theme
+                    .change({_widgetBackground ? 'widgetBlur' : 'blur': v})),
             SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(context.tr('Живой фон')),
                 subtitle: Text(
                     context.tr('Движение готовых тем и зацикливание видео')),
-                value: theme.motion,
-                onChanged: (v) => theme.change({'motion': v})),
+                value: theme.backdropMotion(_widgetBackground),
+                onChanged: (v) => theme.change(_widgetBackground
+                    ? {'widgetMotion': v ? 'on' : 'off'}
+                    : {'motion': v})),
           ])),
       const SizedBox(height: 18),
       _EditorCard(
@@ -549,7 +586,8 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
 }
 
 class _WidgetPreview extends StatelessWidget {
-  const _WidgetPreview({required this.theme,this.player,this.interactive = false});
+  const _WidgetPreview(
+      {required this.theme, this.player, this.interactive = false});
   final ThemeProvider theme;
   final AudioPlayerService? player;
   final bool interactive;
@@ -562,56 +600,105 @@ class _WidgetPreview extends StatelessWidget {
       WidgetStyle.solid => .85,
       WidgetStyle.minimal => .15,
     };
-    return LayoutBuilder(builder:(context,box) {
-      final scale = (box.maxWidth / 800).clamp(.1,.58);
+    return LayoutBuilder(builder: (context, box) {
+      final scale = (box.maxWidth / 800).clamp(.1, .58);
       final radius = BorderRadius.circular(theme.widgetRadius * scale);
-      return Center(child:ClipRRect(borderRadius:radius,child:SizedBox(
-        width:theme.widgetWidth * scale,height:theme.widgetHeight * scale,
-        child:Stack(fit:StackFit.expand,children:[
-          AppBackdrop(theme:theme,compact:true,preview:!interactive),
-          DecoratedBox(decoration:BoxDecoration(border:Border.all(color:Colors.white38),borderRadius:radius),
-            child:Padding(padding:const EdgeInsets.all(7),child:Column(children:[
-              const Align(alignment:Alignment.topLeft,child:Text('oTune',style:TextStyle(fontSize:10))),
-              if (theme.widgetClock) const Flexible(child:Center(child:PlayerClock(compact:true))),
-              if (!theme.widgetClock) const Spacer(),
-              ColoredBox(color:Colors.black.withValues(alpha:opacity),
-                child:_WidgetPreviewControls(audio:audio,theme:theme,interactive:interactive)),
-            ]))),
-        ]),
-      )));
+      return Center(
+          child: ClipRRect(
+              borderRadius: radius,
+              child: SizedBox(
+                width: theme.widgetWidth * scale,
+                height: theme.widgetHeight * scale,
+                child: Stack(fit: StackFit.expand, children: [
+                  AppBackdrop(
+                      theme: theme, compact: true, preview: !interactive),
+                  DecoratedBox(
+                      decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white38),
+                          borderRadius: radius),
+                      child: Padding(
+                          padding: const EdgeInsets.all(7),
+                          child: Column(children: [
+                            const Align(
+                                alignment: Alignment.topLeft,
+                                child: Text('oTune',
+                                    style: TextStyle(fontSize: 10))),
+                            if (theme.widgetClock)
+                              const Flexible(
+                                  child: Center(
+                                      child: PlayerClock(compact: true))),
+                            if (!theme.widgetClock) const Spacer(),
+                            ColoredBox(
+                                color: Colors.black.withValues(alpha: opacity),
+                                child: _WidgetPreviewControls(
+                                    audio: audio,
+                                    theme: theme,
+                                    interactive: interactive)),
+                          ]))),
+                ]),
+              )));
     });
   }
 }
 
 class _WidgetPreviewControls extends StatelessWidget {
-  const _WidgetPreviewControls({required this.audio,required this.theme,required this.interactive});
+  const _WidgetPreviewControls(
+      {required this.audio, required this.theme, required this.interactive});
   final AudioPlayerService audio;
   final ThemeProvider theme;
   final bool interactive;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(listenable:audio,builder:(context,_) {
-    final duration = audio.duration.inMilliseconds;
-    return Column(mainAxisSize:MainAxisSize.min,children:[
-      Row(children:[
-        const SizedBox(width:5),
-        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Text(audio.currentTitle.isEmpty ? context.tr('Выберите трек') : audio.currentTitle,
-            style:const TextStyle(fontSize:11),maxLines:1,overflow:TextOverflow.ellipsis),
-          if (theme.widgetArtist && audio.currentArtist.isNotEmpty)
-            Text(audio.currentArtist,style:const TextStyle(fontSize:10,color:Colors.white70),maxLines:1,overflow:TextOverflow.ellipsis),
-        ])),
-        if (interactive)
-          IconButton(visualDensity:VisualDensity.compact,
-            tooltip:context.tr(audio.isPlaying ? 'Пауза' : 'Воспроизвести'),
-            onPressed:audio.hasTrack ? audio.togglePlayPause : null,
-            icon:Icon(audio.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,size:20))
-        else const Padding(padding:EdgeInsets.all(3),child:Icon(Icons.play_arrow_rounded,size:18)),
-      ]),
-      if (theme.widgetProgress)
-        LinearProgressIndicator(minHeight:2,value:duration == 0 ? 0 : (audio.position.inMilliseconds / duration).clamp(0.0,1.0)),
-    ]);
-  });
+  Widget build(BuildContext context) => ListenableBuilder(
+      listenable: audio,
+      builder: (context, _) {
+        final duration = audio.duration.inMilliseconds;
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            const SizedBox(width: 5),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(
+                      audio.currentTitle.isEmpty
+                          ? context.tr('Выберите трек')
+                          : audio.currentTitle,
+                      style: const TextStyle(fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  if (theme.widgetArtist && audio.currentArtist.isNotEmpty)
+                    Text(audio.currentArtist,
+                        style: const TextStyle(
+                            fontSize: 10, color: Colors.white70),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                ])),
+            if (interactive)
+              IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip:
+                      context.tr(audio.isPlaying ? 'Пауза' : 'Воспроизвести'),
+                  onPressed: audio.hasTrack ? audio.togglePlayPause : null,
+                  icon: Icon(
+                      audio.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      size: 20))
+            else
+              const Padding(
+                  padding: EdgeInsets.all(3),
+                  child: Icon(Icons.play_arrow_rounded, size: 18)),
+          ]),
+          if (theme.widgetProgress)
+            LinearProgressIndicator(
+                minHeight: 2,
+                value: duration == 0
+                    ? 0
+                    : (audio.position.inMilliseconds / duration)
+                        .clamp(0.0, 1.0)),
+        ]);
+      });
 }
 
 class _LoopDialog extends StatefulWidget {

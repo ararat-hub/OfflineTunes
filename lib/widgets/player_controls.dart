@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import '../core/localization.dart';
 import 'package:flutter/services.dart';
 
@@ -23,7 +24,18 @@ class PlayerControlButton extends StatelessWidget {
         enabled: onPressed != null,
         onTap: onPressed,
         excludeSemantics: true,
-        child: IconButton(icon: icon, color: color, onPressed: onPressed),
+        child: IconButton(
+          icon: icon,
+          color: color,
+          onPressed: onPressed,
+          style: Platform.isWindows
+              ? IconButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9)),
+                  overlayColor: Theme.of(context).colorScheme.primary,
+                )
+              : null,
+        ),
       );
 }
 

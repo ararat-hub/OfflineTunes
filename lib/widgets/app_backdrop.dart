@@ -23,7 +23,8 @@ class AppBackdrop extends StatefulWidget {
   State<AppBackdrop> createState() => _AppBackdropState();
 }
 
-class _AppBackdropState extends State<AppBackdrop> with WindowListener {
+class _AppBackdropState extends State<AppBackdrop>
+    with WindowListener, WidgetsBindingObserver {
   static const _ambientPeriod = Duration(seconds: 28);
   final _ambientTime = Stopwatch();
   final _ambientPhase = ValueNotifier(0.0);
@@ -38,10 +39,12 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   (String?, bool, VideoLoop?) _requestedVideo = (null, false, null);
   Future<void> _operations = Future.value();
   bool _minimized = false;
+  bool _backgrounded = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (Platform.isWindows) windowManager.addListener(this);
     _sync();
   }
@@ -55,7 +58,10 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   void _sync() {
     final theme = widget.theme;
     final backgroundType = theme.backgroundType(compact: widget.compact);
-    final animate = theme.motion && !_minimized && !widget.preview;
+    final animate = theme.backdropMotion(widget.compact) &&
+        !_minimized &&
+        !_backgrounded &&
+        !widget.preview;
     if (animate && backgroundType == BackgroundType.ambient) {
       _ambientTime.start();
       _ambientTimer ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
@@ -174,6 +180,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (Platform.isWindows) windowManager.removeListener(this);
     _ambientTimer?.cancel();
     _ambientPhase.dispose();
@@ -182,10 +189,19 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _backgrounded =
+        state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
+    _sync();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final mediaPath = theme.mediaPath(compact: widget.compact);
     final backgroundType = theme.backgroundType(compact: widget.compact);
+    final blur = theme.backdropBlur(widget.compact);
+    final fit = theme.backdropFit(widget.compact);
     Widget background = CustomPaint(
         painter: _AmbientPainter(theme.preset.colors, _ambientPhase),
         size: Size.infinite);
@@ -194,7 +210,7 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
     }
     if (backgroundType == BackgroundType.image && mediaPath != null) {
       background = Image.file(File(mediaPath),
-          fit: theme.backgroundFit,
+          fit: fit,
           filterQuality: FilterQuality.high,
           gaplessPlayback: true,
           errorBuilder: (_, __, ___) => ColoredBox(
@@ -208,17 +224,16 @@ class _AppBackdropState extends State<AppBackdrop> with WindowListener {
         _error == null) {
       background = Video(
           controller: _video!,
-          fit: theme.backgroundFit,
+          fit: fit,
           controls: NoVideoControls,
           filterQuality: FilterQuality.high,
           wakelock: false,
           pauseUponEnteringBackgroundMode: false,
           resumeUponEnteringForegroundMode: false);
     }
-    if (theme.blur > 0) {
+    if (blur > 0) {
       background = ImageFiltered(
-          imageFilter:
-              ui.ImageFilter.blur(sigmaX: theme.blur, sigmaY: theme.blur),
+          imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: background);
     }
     return Stack(fit: StackFit.expand, children: [

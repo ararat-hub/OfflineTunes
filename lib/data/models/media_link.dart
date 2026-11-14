@@ -4,6 +4,12 @@ class MediaLink {
   final int startSeconds;
   const MediaLink._(this.uri, this.youtubeId, this.startSeconds);
   bool get isYoutube => youtubeId != null;
+  bool get isDownloadableAudio =>
+      !isYoutube && uri.scheme == 'https' && isDirectAudioFile(uri);
+
+  static bool isDirectAudioFile(Uri uri) =>
+      RegExp(r'\.(mp3|flac|m4a|aac|wav|ogg|oga|opus)$', caseSensitive: false)
+          .hasMatch(uri.path);
   Uri get canonicalYoutubeUrl => Uri.https('www.youtube.com', '/watch',
       {'v': youtubeId!, if (startSeconds > 0) 't': '${startSeconds}s'});
 
@@ -52,9 +58,7 @@ class MediaLink {
       }
       return MediaLink._(uri, id, seconds.clamp(0, 604800));
     }
-    if (RegExp(r'\.(mp3|flac|m4a|aac|wav|ogg|oga|opus|m3u8)$',
-            caseSensitive: false)
-        .hasMatch(uri.path)) {
+    if (isDirectAudioFile(uri) || uri.path.toLowerCase().endsWith('.m3u8')) {
       return MediaLink._(uri, null, 0);
     }
     throw const FormatException(

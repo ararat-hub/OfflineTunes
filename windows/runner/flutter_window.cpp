@@ -1,9 +1,66 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <cstring>
 #include <flutter/standard_method_codec.h>
+#include <shobjidl.h>
+#include <wrl/client.h>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+
+flutter::EncodableValue VideoThumbnail(const std::string& path) {
+  const int length =
+      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.c_str(), -1,
+                          nullptr, 0);
+  if (!length) return {};
+  std::wstring wide_path(length, L'\0');
+  MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.c_str(), -1,
+                      wide_path.data(), length);
+  Microsoft::WRL::ComPtr<IShellItemImageFactory> factory;
+  if (FAILED(SHCreateItemFromParsingName(wide_path.c_str(), nullptr,
+                                         IID_PPV_ARGS(&factory)))) {
+    return {};
+  }
+  HBITMAP bitmap = nullptr;
+  if (FAILED(factory->GetImage({256, 144}, SIIGBF_THUMBNAILONLY, &bitmap))) {
+    return {};
+  }
+
+  BITMAP source{};
+  if (!GetObject(bitmap, sizeof(source), &source)) {
+    DeleteObject(bitmap);
+    return {};
+  }
+  const auto row_size = (source.bmWidth * 3 + 3) & ~3;
+  BITMAPINFO info{};
+  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth = source.bmWidth;
+  info.bmiHeader.biHeight = -source.bmHeight;
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 24;
+  info.bmiHeader.biSizeImage = row_size * source.bmHeight;
+
+  BITMAPFILEHEADER header{};
+  header.bfType = 0x4d42;
+  header.bfOffBits = sizeof(header) + sizeof(info.bmiHeader);
+  header.bfSize = header.bfOffBits + info.bmiHeader.biSizeImage;
+  std::vector<uint8_t> bytes(header.bfSize);
+  const HDC dc = GetDC(nullptr);
+  const int rows = dc ? GetDIBits(dc, bitmap, 0, source.bmHeight,
+                                  bytes.data() + header.bfOffBits,
+                                  &info, DIB_RGB_COLORS) : 0;
+  if (dc) ReleaseDC(nullptr, dc);
+  DeleteObject(bitmap);
+  if (rows != source.bmHeight) return {};
+  std::memcpy(bytes.data(), &header, sizeof(header));
+  std::memcpy(bytes.data() + sizeof(header), &info.bmiHeader,
+              sizeof(info.bmiHeader));
+  return flutter::EncodableValue(std::move(bytes));
+}
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,6 +84,17 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  flutter::MethodChannel<flutter::EncodableValue> thumbnails(
+      flutter_controller_->engine()->messenger(), "otune/background_thumbnail",
+      &flutter::StandardMethodCodec::GetInstance());
+  thumbnails.SetMethodCallHandler([](const auto& call, auto result) {
+    if (call.method_name() != "frame") {
+      result->NotImplemented();
+      return;
+    }
+    const auto* path = std::get_if<std::string>(call.arguments());
+    result->Success(path ? VideoThumbnail(*path) : flutter::EncodableValue());
+  });
 
   hotkeys_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "offlinetunes/hotkeys",

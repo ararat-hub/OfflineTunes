@@ -32,7 +32,7 @@ class AudioPlayerService extends ChangeNotifier {
   final ValueChanged<PlaybackTrack>? onListened;
   String? _recordedPath;
 
-  AudioPlayerService({Player? player, this.onListened})
+  AudioPlayerService({Player? player, this.onListened, this.requestAudioFocus})
       : _player = player ?? Player() {
     _subscriptions.addAll([
       _player.stream.playing.listen((value) {
@@ -101,6 +101,8 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   bool get isPlaying => _isPlaying;
+  bool get isCompleted => _completed;
+  Future<bool> Function()? requestAudioFocus;
   bool get isLoading => _isLoading;
   bool get hasTrack => _current != null;
   bool get hasQueue => _queue.length > 1;
@@ -222,6 +224,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> _open() async {
+    if (requestAudioFocus != null && !await requestAudioFocus!()) return;
     _isLoading = true;
     _opened = false;
     _completed = false;
@@ -274,6 +277,7 @@ class AudioPlayerService extends ChangeNotifier {
           await _player.pause();
           await _saveState();
         } else {
+          if (requestAudioFocus != null && !await requestAudioFocus!()) return;
           if (_completed) await _player.seek(Duration.zero);
           await _player.play();
         }

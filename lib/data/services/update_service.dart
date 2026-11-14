@@ -1,19 +1,28 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppUpdate {
-  const AppUpdate(this.version, this.page);
+  const AppUpdate(this.version, this.page, {this.download});
   final String version;
   final Uri page;
+  final Uri? download;
 }
 
 class UpdateService {
-  UpdateService(this._prefs, {http.Client? client, String? installedVersion})
+  UpdateService(this._prefs,
+      {http.Client? client, String? installedVersion, String? assetExtension})
       : _client = client ?? http.Client(),
-        _installedVersion = installedVersion;
+        _installedVersion = installedVersion,
+        _assetExtension = assetExtension ??
+            (Platform.isAndroid
+                ? '.apk'
+                : Platform.isWindows
+                    ? '.exe'
+                    : null);
 
   static final _latest = Uri.https(
     'api.github.com',
@@ -22,27 +31,37 @@ class UpdateService {
   final SharedPreferences _prefs;
   final http.Client _client;
   String? _installedVersion;
+  final String? _assetExtension;
   Future<AppUpdate?>? _pending;
+  DateTime? _lastRequest;
   bool get automatic => _prefs.getBool('update_check_automatic') ?? true;
 
   Future<void> setAutomatic(bool value) =>
       _prefs.setBool('update_check_automatic', value);
 
-  Future<void> markOffered(AppUpdate update) =>
-      _prefs.setString('update_last_offered', update.version);
+  Future<void> markOffered(AppUpdate update) async {
+    await _prefs.setString('update_last_offered', update.version);
+    await _prefs.setInt(
+        'update_last_offer_time', DateTime.now().millisecondsSinceEpoch);
+  }
 
   Future<AppUpdate?> check({bool manual = false}) async {
     if (!manual) {
       if (!automatic) return null;
-      final last = _prefs.getInt('update_last_check') ?? 0;
-      if (DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(last)) <
-          const Duration(days: 1)) {
+      final last = _lastRequest;
+      if (last != null &&
+          DateTime.now().difference(last) < const Duration(minutes: 30)) {
         return null;
       }
     }
     final update = await (_pending ??= _check());
-    if (!manual && update?.version == _prefs.getString('update_last_offered')) {
-      return null;
+    if (!manual && update != null) {
+      final last = _prefs.getInt('update_last_offer_time') ?? 0;
+      if (update.version == _prefs.getString('update_last_offered') &&
+          DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(last)) <
+              const Duration(days: 1)) {
+        return null;
+      }
     }
     return update;
   }
@@ -51,23 +70,25 @@ class UpdateService {
     try {
       final response = await _client.get(_latest, headers: {
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'OfflineTunes/1.4',
+        'User-Agent': 'oTune (https://github.com/ararat-hub/OfflineTunes)',
+        'Cache-Control': 'no-cache',
       }).timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) {
         throw http.ClientException('GitHub Releases: ${response.statusCode}');
       }
       _installedVersion ??= (await PackageInfo.fromPlatform()).version;
-      final release =
-          parseRelease(jsonDecode(response.body), _installedVersion!);
-      await _prefs.setInt(
-          'update_last_check', DateTime.now().millisecondsSinceEpoch);
+      final release = parseRelease(
+          jsonDecode(response.body), _installedVersion!,
+          assetExtension: _assetExtension);
+      _lastRequest = DateTime.now();
       return release;
     } finally {
       _pending = null;
     }
   }
 
-  static AppUpdate? parseRelease(Object? payload, String installed) {
+  static AppUpdate? parseRelease(Object? payload, String installed,
+      {String? assetExtension}) {
     if (payload is! Map ||
         payload['draft'] == true ||
         payload['prerelease'] == true) {
@@ -81,12 +102,27 @@ class UpdateService {
     for (var i = 0; i < current.length; i++) {
       if (newer[i] < current[i]) return null;
       if (newer[i] > current[i]) {
-        return AppUpdate(
-            newer.join('.'),
-            Uri.https(
-              'github.com',
-              '/ararat-hub/OfflineTunes/releases/tag/$tag',
-            ));
+        final page = Uri.https(
+            'github.com', '/ararat-hub/OfflineTunes/releases/tag/$tag');
+        final assets = payload['assets'];
+        Uri? download;
+        if (assetExtension != null) {
+          final fileName = assetExtension == '.apk'
+              ? 'oTune-Android-${newer.join('.')}.apk'
+              : 'oTune-Setup-${newer.join('.')}.exe';
+          final expected = Uri.https('github.com',
+              '/ararat-hub/OfflineTunes/releases/download/$tag/$fileName');
+          if (assets is List &&
+              assets.whereType<Map>().any((asset) =>
+                  asset['name'] == fileName &&
+                  asset['state'] == 'uploaded' &&
+                  asset['browser_download_url'] == expected.toString())) {
+            download = expected;
+          } else {
+            return null;
+          }
+        }
+        return AppUpdate(newer.join('.'), page, download: download);
       }
     }
     return null;

@@ -43,7 +43,13 @@ class MusicCatalog {
       'offset': '$offset',
       'app_name': 'OfflineTunes',
     });
-    return parseAudiusPage(await _request(uri), offset: offset, limit: limit);
+    try {
+      return parseAudiusPage(await _request(uri), offset: offset, limit: limit);
+    } on Exception {
+      final fallback = uri.replace(host: 'discoveryprovider.audius.co');
+      return parseAudiusPage(await _request(fallback),
+          offset: offset, limit: limit);
+    }
   }
 
   Future<List<CatalogTrack>> popular() async {
@@ -59,9 +65,8 @@ class MusicCatalog {
   }
 
   Future<Object?> _request(Uri uri) async {
-    final response = await _client.get(uri, headers: {
-      'User-Agent': userAgent
-    }).timeout(const Duration(seconds: 15));
+    final response = await _client.get(uri,
+        headers: {'User-Agent': userAgent}).timeout(const Duration(seconds: 8));
     if (response.statusCode != 200) {
       throw http.ClientException('${uri.host}: ${response.statusCode}', uri);
     }
@@ -70,7 +75,8 @@ class MusicCatalog {
 
   static CatalogPage parseAudiusPage(Object? payload,
       {required int offset, required int limit}) {
-    final items = payload is Map ? payload['data'] : null;
+    final data = payload is Map ? payload['data'] : null;
+    final items = data is Map ? data['tracks'] : data;
     if (items is! List) throw const FormatException('Invalid Audius response');
     final result = <CatalogTrack>[];
     for (final item in items.whereType<Map>()) {
@@ -78,9 +84,12 @@ class MusicCatalog {
       final name = item['title'];
       final duration = item['duration'];
       final permalink = item['permalink'];
-      if (item['is_streamable'] != true ||
-          item['is_stream_gated'] != false ||
-          item['is_unlisted'] != false ||
+      if (item['is_streamable'] == false ||
+          item['is_available'] == false ||
+          item['is_stream_gated'] == true ||
+          (item['stream_conditions'] is Map &&
+              (item['stream_conditions'] as Map).isNotEmpty) ||
+          item['is_unlisted'] == true ||
           id is! String ||
           !RegExp(r'^[a-zA-Z0-9]+$').hasMatch(id) ||
           name is! String ||
@@ -129,8 +138,8 @@ class MusicCatalog {
     final rawPages = query is Map ? query['pages'] : null;
     final pages =
         rawPages is List ? rawPages.whereType<Map>().toList() : <Map>[];
-    pages.sort((a, b) =>
-        ((a['index'] as int?) ?? 0).compareTo((b['index'] as int?) ?? 0));
+    pages.sort((a, b) => (int.tryParse('${a['index']}') ?? 0)
+        .compareTo(int.tryParse('${b['index']}') ?? 0));
     final tracks = <CatalogTrack>[];
     for (final page in pages) {
       final details = page['imageinfo'];

@@ -37,9 +37,11 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
   StreamSubscription<HotkeyAction>? _hotkeys;
+  Timer? _updateTimer;
+  bool _checkingUpdates = false;
   double _volumeBeforeMute = 1;
   static const _titles = [
     'Главная',
@@ -64,6 +66,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _updateTimer = Timer.periodic(const Duration(minutes: 30), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        unawaited(_checkUpdates());
+      }
+    });
     final link = widget.initialLink;
     if (link != null) _selectedIndex = 4;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -74,13 +82,14 @@ class _HomeScreenState extends State<HomeScreen> {
         unawaited(context
             .read<AudioPlayerService>()
             .playUrl(link.uri.toString(), title: link.uri.pathSegments.last));
-      } else {
-        unawaited(_checkUpdates());
       }
+      unawaited(_checkUpdates());
     });
   }
 
   Future<void> _checkUpdates() async {
+    if (_checkingUpdates) return;
+    _checkingUpdates = true;
     try {
       final update = await context.read<UpdateService?>()?.check();
       if (mounted &&
@@ -90,7 +99,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (error) {
       debugPrint('Check for updates: $error');
+    } finally {
+      _checkingUpdates = false;
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_checkUpdates());
   }
 
   void _navigate(int index) => setState(() => _selectedIndex = index);
@@ -149,6 +165,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _updateTimer?.cancel();
     unawaited(_hotkeys?.cancel());
     super.dispose();
   }

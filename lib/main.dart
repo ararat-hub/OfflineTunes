@@ -6,6 +6,7 @@ import 'package:timezone/data/latest.dart' as time_zones;
 import 'data/db/app_database.dart';
 import 'data/models/media_link.dart';
 import 'data/services/audio_player_service.dart';
+import 'data/services/system_media_controls.dart';
 import 'data/services/listening_history.dart';
 import 'data/services/offline_tracks.dart';
 import 'data/services/favorite_tracks.dart';
@@ -36,6 +37,16 @@ void main(List<String> arguments) async {
   final preferences = AppPreferences(prefs);
   await preferences.initialize();
   await theme.ready;
+  final history = ListeningHistory(prefs);
+  final audio = AudioPlayerService(onListened: history.record);
+  if (Platform.isAndroid) {
+    try {
+      final session = await SystemMediaControls.initialize(audio);
+      audio.requestAudioFocus = () => session.setActive(true);
+    } catch (error) {
+      debugPrint('Android media session: $error');
+    }
+  }
   MediaLink? initialLink;
   if (arguments.isNotEmpty) {
     try {
@@ -50,7 +61,7 @@ void main(List<String> arguments) async {
       providers: [
         Provider<AppDatabase>.value(value: db),
         ChangeNotifierProvider<AppPreferences>(create: (_) => preferences),
-        ChangeNotifierProvider(create: (_) => ListeningHistory(prefs)),
+        ChangeNotifierProvider(create: (_) => history, lazy: false),
         ChangeNotifierProvider(create: (_) => FavoriteTracks(db, prefs)),
         if (Platform.isAndroid)
           ChangeNotifierProvider(create: (_) => OfflineTracks()),
@@ -58,8 +69,8 @@ void main(List<String> arguments) async {
             create: (_) => UpdateService(prefs),
             dispose: (_, updates) => updates.dispose()),
         ChangeNotifierProvider<AudioPlayerService>(
-          create: (context) => AudioPlayerService(
-              onListened: context.read<ListeningHistory>().record),
+          create: (_) => audio,
+          lazy: false,
         ),
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => theme,

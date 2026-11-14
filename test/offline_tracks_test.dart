@@ -20,6 +20,24 @@ void main() {
     license: 'CC BY 4.0',
   );
 
+  test('a direct HTTPS audio link is saved with its query intact', () async {
+    final root = await Directory.systemTemp.createTemp('otune-link');
+    addTearDown(() => root.delete(recursive: true));
+    const path = 'https://example.com/music/test.flac?token=example';
+    final service = OfflineTracks(
+        directory: () async => root,
+        client: MockClient((request) async {
+          expect(request.url.toString(), path);
+          return http.Response.bytes([102, 76, 97, 67, 10], 200,
+              headers: {'content-type': 'audio/flac'});
+        }));
+    addTearDown(service.dispose);
+    await service.download(const PlaybackTrack(
+        path: path, downloadUrl: path, title: 'Test', artist: 'Artist'));
+    expect(service.tracks.single.path, endsWith('.flac'));
+    expect(service.tracks.single.identity, path);
+  });
+
   test('a download plays from disk and survives restart with attribution',
       () async {
     final root = await Directory.systemTemp.createTemp('otune-download');

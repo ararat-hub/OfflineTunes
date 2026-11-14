@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
@@ -31,8 +32,26 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _loading = false;
   bool _catalogFailed = false;
   _Scope _scope = _Scope.all;
+  Timer? _debounce;
+
+  void _scheduleSearch(String value) {
+    _debounce?.cancel();
+    // Ignore responses for the previous query as soon as the text changes.
+    _generation++;
+    if (value.trim().isEmpty || _scope == _Scope.favorites) {
+      unawaited(_search());
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _catalogFailed = false;
+    });
+    _debounce =
+        Timer(const Duration(milliseconds: 400), () => unawaited(_search()));
+  }
 
   Future<void> _search({bool append = false}) async {
+    if (!append) _debounce?.cancel();
     final query = append ? _submitted : _query.text.trim();
     if (append && (_offsets.isEmpty || _loading)) return;
     final requests = append
@@ -106,6 +125,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _generation++;
     _query.dispose();
     _client.close();
@@ -127,6 +147,8 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Column(children: [
         TextField(
           controller: _query,
+          textInputAction: TextInputAction.search,
+          onChanged: _scheduleSearch,
           onSubmitted: (_) => _search(),
           decoration: InputDecoration(
             hintText: context.tr('Введите название трека или исполнителя...'),
@@ -182,7 +204,15 @@ class _SearchScreenState extends State<SearchScreen> {
                 if (_online[source]?.isNotEmpty == true)
                   _onlineSection(context, _online[source]!),
               if (_catalogFailed && emptyOnline)
-                _label(context.tr('Каталог временно недоступен.')),
+                SliverToBoxAdapter(
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(context.tr('Каталог временно недоступен.')),
+                    trailing: TextButton(
+                        onPressed: _search,
+                        child: Text(context.tr('Повторить'))),
+                  ),
+                ),
               if (!_loading &&
                   !_catalogFailed &&
                   _local.isEmpty &&
@@ -190,7 +220,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   favoriteMatches.isEmpty)
                 _label(context.tr(
                     _submitted.isEmpty && _scope != _Scope.favorites
-                        ? 'Введите запрос и нажмите Enter или стрелочку'
+                        ? 'Введите название трека или исполнителя...'
                         : 'Ничего не найдено')),
               if (!_loading && _offsets.isNotEmpty)
                 SliverToBoxAdapter(

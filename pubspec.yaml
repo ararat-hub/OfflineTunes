@@ -1,7 +1,7 @@
 name: offlinetunes
 description: oTune offline-first music player
 publish_to: 'none'
-version: 1.5.0+6
+version: 1.5.1+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -19,6 +19,7 @@ dependencies:
   just_audio_windows: ^0.2.2
   audioplayers: ^6.1.0
   audio_service: ^0.18.15
+  audio_session: ^0.1.25
   # состояние и сеть
   flutter_riverpod: ^2.6.1
   provider: ^6.1.2

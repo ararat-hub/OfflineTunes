@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/models/media_link.dart';
+import '../data/models/playback_track.dart';
 import '../data/services/audio_player_service.dart';
+import '../data/services/offline_tracks.dart';
 import '../data/services/youtube_player_service.dart';
 
 class OpenLinkCard extends StatefulWidget {
@@ -23,7 +25,7 @@ class _OpenLinkCardState extends State<OpenLinkCard> {
     super.dispose();
   }
 
-  Future<void> _open() async {
+  Future<void> _open({bool download = false}) async {
     if (_busy) return;
     try {
       final link = MediaLink.parse(_input.text);
@@ -34,6 +36,10 @@ class _OpenLinkCardState extends State<OpenLinkCard> {
       final audio = context.read<AudioPlayerService>();
       final youtube = context.read<YoutubePlayerService>();
       final fromLink = context.tr('По ссылке');
+      if (download && !link.isDownloadableAudio) {
+        throw const FormatException(
+            'Для загрузки нужна прямая HTTPS-ссылка на аудиофайл.');
+      }
       if (link.isYoutube) {
         if (Platform.isAndroid) {
           await audio.pause();
@@ -45,16 +51,32 @@ class _OpenLinkCardState extends State<OpenLinkCard> {
           await youtube.open(link);
         }
       } else {
-        await youtube.close();
-        await audio.playUrl(link.uri.toString(),
-            title: link.uri.pathSegments.last, artist: fromLink);
+        final path = link.uri.toString();
+        final track = PlaybackTrack(
+            path: path,
+            title: link.uri.pathSegments.last,
+            artist: fromLink,
+            downloadUrl: link.isDownloadableAudio ? path : null);
+        final offline = context.read<OfflineTracks?>();
+        if (download && offline != null) {
+          await offline.download(track);
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(context.tr('Скачано'))));
+          }
+        } else {
+          await youtube.close();
+          await audio.playQueue([offline?.localOrOriginal(track) ?? track]);
+        }
       }
     } on FormatException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
       debugPrint('Open link: $e');
       if (mounted) {
-        setState(() => _error = 'Не удалось открыть ссылку.');
+        setState(() => _error = download
+            ? 'Не удалось скачать трек.'
+            : 'Не удалось открыть ссылку.');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -81,16 +103,23 @@ class _OpenLinkCardState extends State<OpenLinkCard> {
                 prefixIcon: const Icon(Icons.link),
                 errorText: _error == null ? null : context.tr(_error!))),
         const SizedBox(height: 12),
-        FilledButton.icon(
-            onPressed: _busy ? null : _open,
-            icon: _busy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.play_arrow),
-            label: Text(_busy
-                ? context.tr('Открываем…')
-                : context.tr('Воспроизвести ссылку'))),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.icon(
+              onPressed: _busy ? null : _open,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.play_arrow),
+              label: Text(_busy
+                  ? context.tr('Открываем…')
+                  : context.tr('Воспроизвести ссылку'))),
+          if (Platform.isAndroid)
+            OutlinedButton.icon(
+                onPressed: _busy ? null : () => _open(download: true),
+                icon: const Icon(Icons.download_outlined),
+                label: Text(context.tr('Скачать'))),
+        ]),
       ]);
 }

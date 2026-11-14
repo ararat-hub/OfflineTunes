@@ -206,12 +206,21 @@ void main() {
       'draft': false,
       'prerelease': false,
       'html_url': 'https://example.com/not-the-app',
+      'assets': [
+        {
+          'name': 'oTune-Setup-1.10.0.exe',
+          'state': 'uploaded',
+          'browser_download_url':
+              'https://github.com/ararat-hub/OfflineTunes/releases/download/v1.10.0/oTune-Setup-1.10.0.exe',
+        },
+      ],
     };
     final prefs = await SharedPreferences.getInstance();
     var calls = 0;
     final service = UpdateService(
       prefs,
       installedVersion: '1.4.0+4',
+      assetExtension: '.exe',
       client: MockClient((request) async {
         calls++;
         expect(request.url.host, 'api.github.com');
@@ -222,6 +231,9 @@ void main() {
     expect(update?.version, '1.10.0');
     expect(update?.page.toString(),
         'https://github.com/ararat-hub/OfflineTunes/releases/tag/v1.10.0');
+    expect(update?.download?.path, endsWith('/oTune-Setup-1.10.0.exe'));
+    expect(UpdateService.parseRelease(payload, '1.0.0', assetExtension: '.apk'),
+        isNull);
     expect(await service.check(), isNull);
     expect(calls, 1);
     expect(UpdateService.parseRelease(payload, '1.10.1'), isNull);
