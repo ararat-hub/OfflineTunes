@@ -2,6 +2,7 @@ import '../core/localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_windows/webview_windows.dart';
+import 'package:webview_flutter/webview_flutter.dart' as mobile;
 import '../data/services/youtube_player_service.dart';
 import 'player_controls.dart';
 
@@ -13,14 +14,17 @@ class YoutubePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final youtube = context.watch<YoutubePlayerService>();
     if (!youtube.active) return const SizedBox.shrink();
-    final viewport = youtube.initialized
-        ? Webview(youtube.controller!,
-            permissionRequested: (_, __, ___) async =>
-                WebviewPermissionDecision.deny)
-        : Center(
-            child: youtube.error == null
-                ? const CircularProgressIndicator()
-                : const Icon(Icons.play_disabled, size: 42));
+    final android = youtube.androidController;
+    final viewport = android != null
+        ? mobile.WebViewWidget(controller: android)
+        : youtube.initialized
+            ? Webview(youtube.controller!,
+                permissionRequested: (_, __, ___) async =>
+                    WebviewPermissionDecision.deny)
+            : Center(
+                child: youtube.error == null
+                    ? const CircularProgressIndicator()
+                    : const Icon(Icons.play_disabled, size: 42));
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -34,7 +38,8 @@ class YoutubePanel extends StatelessWidget {
                         : youtube.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis)),
-            if (youtube.initialized &&
+            if (youtube.controller != null &&
+                youtube.initialized &&
                 !youtube.watchPage &&
                 youtube.error != null)
               PlayerControlButton(

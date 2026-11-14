@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'tables.dart';
+import '../models/music_query.dart';
 
 part 'app_database.g.dart';
 
@@ -37,14 +38,13 @@ class AppDatabase extends _$AppDatabase {
           .write(TracksCompanion(isFavorite: Value(favorite ? 1 : 0)));
 
   Future<List<Track>> searchTracks(String query) async {
-    final words = query.toLowerCase().trim().split(RegExp(r'\s+'));
+    final search = MusicQuery(query);
     final local = await getAllTracks();
     return local
         .where((track) {
-          final searchable =
-              '${track.title} ${track.artist} ${track.album ?? ''} ${track.genre ?? ''}'
-                  .toLowerCase();
-          return words.every(searchable.contains);
+          return search.matches(
+              '${track.title} ${track.album ?? ''} ${track.genre ?? ''}',
+              track.artist);
         })
         .take(150)
         .toList();

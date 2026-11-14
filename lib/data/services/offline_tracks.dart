@@ -19,6 +19,8 @@ class OfflineTracks extends ChangeNotifier {
     ready = _load().catchError((Object error) {
       _initializationError = error;
       debugPrint('Open downloads: $error');
+    }).whenComplete(() {
+      _restoring = false;
       _changed();
     });
   }
@@ -30,6 +32,9 @@ class OfflineTracks extends ChangeNotifier {
   final _downloads = <String, ({PlaybackTrack track, File metadata})>{};
   final _active = <String, double?>{};
   bool _disposed = false;
+  bool _restoring = true;
+  bool get restoring => _restoring;
+  bool get storageUnavailable => _initializationError != null;
   Object? _initializationError;
   static const _maxBytes = 256 * 1024 * 1024;
 
@@ -63,7 +68,7 @@ class OfflineTracks extends ChangeNotifier {
         final audio = File(p.join(_root.path, name));
         if (await audio.exists()) {
           final track = PlaybackTrack.fromJson(json);
-          _downloads[track.path] =
+          _downloads[track.identity] =
               (track: track.withPath(audio.path), metadata: file);
         }
       } catch (error) {
@@ -85,12 +90,13 @@ class OfflineTracks extends ChangeNotifier {
         uri == null ||
         uri.scheme != 'https' ||
         uri.userInfo.isNotEmpty ||
-        (!catalog && !MediaLink.isDirectAudioFile(uri)) ||
-        contains(track.path) ||
-        isLoading(track.path)) {
-      return;
+        (!catalog && !MediaLink.isDirectAudioFile(uri))) {
+      throw const FormatException(
+          'The link does not provide a downloadable audio file');
     }
-    _active[track.path] = null;
+    final identity = track.identity;
+    if (contains(identity) || isLoading(identity)) return;
+    _active[identity] = null;
     _changed();
     final id = const Uuid().v4();
     final pending = File(p.join(_root.path, '$id.part'));
@@ -127,7 +133,7 @@ class OfflineTracks extends ChangeNotifier {
             final percent = (received * 100 ~/ length).clamp(0, 100);
             if (percent != lastPercent) {
               lastPercent = percent;
-              _active[track.path] = percent / 100;
+              _active[identity] = percent / 100;
               _changed();
             }
           }
@@ -146,11 +152,11 @@ class OfflineTracks extends ChangeNotifier {
           jsonEncode({...track.toJson(), 'file': name}),
           flush: true);
       final metadata = await manifest.rename(p.join(_root.path, '$id.json'));
-      _downloads[track.path] =
+      _downloads[identity] =
           (track: track.withPath(audio.path), metadata: metadata);
       committed = true;
     } finally {
-      _active.remove(track.path);
+      _active.remove(identity);
       _changed();
       if (!committed) {
         for (final file in [pending, manifest, if (audio != null) audio]) {

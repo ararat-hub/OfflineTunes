@@ -41,7 +41,7 @@ void main(List<String> arguments) async {
   final audio = AudioPlayerService(onListened: history.record);
   if (Platform.isAndroid) {
     try {
-      final session = await SystemMediaControls.initialize(audio);
+      final session = await SystemMediaControls.initialize(audio, theme);
       audio.requestAudioFocus = () => session.setActive(true);
     } catch (error) {
       debugPrint('Android media session: $error');
@@ -82,6 +82,9 @@ void main(List<String> arguments) async {
                 )),
         ChangeNotifierProvider<DesktopWindowService>(
             create: (context) => DesktopWindowService(
+                theme: theme,
+                youtubeActive: () =>
+                    context.read<YoutubePlayerService>().active,
                 onMinimize:
                     context.read<YoutubePlayerService>().pauseForVisibility)),
         ChangeNotifierProvider<NetworkService>(

@@ -4,16 +4,23 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:media_kit/media_kit.dart' show PlaylistMode;
 
+import '../../theme/theme_provider.dart';
 import '../models/playback_track.dart';
 import 'audio_player_service.dart';
+import 'track_artwork_store.dart';
 
 class SystemMediaControls extends BaseAudioHandler with SeekHandler {
-  SystemMediaControls(this._player) {
+  SystemMediaControls(this._player, this._theme) {
     _player.addListener(_publish);
+    _theme.addListener(_publish);
   }
 
   final AudioPlayerService _player;
+  final ThemeProvider _theme;
   PlaybackTrack? _track;
+  String? _background;
+  Uri? _art;
+  int _artRequest = 0;
   Duration _duration = Duration.zero;
   bool _active = false;
   bool _stopped = false;
@@ -26,11 +33,12 @@ class SystemMediaControls extends BaseAudioHandler with SeekHandler {
     int position
   })? _lastState;
 
-  static Future<AudioSession> initialize(AudioPlayerService player) async {
+  static Future<AudioSession> initialize(
+      AudioPlayerService player, ThemeProvider theme) async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
     final handler = await AudioService.init(
-      builder: () => SystemMediaControls(player),
+      builder: () => SystemMediaControls(player, theme),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.example.offlinetunes.playback',
         androidNotificationChannelName: 'oTune',
@@ -54,19 +62,25 @@ class SystemMediaControls extends BaseAudioHandler with SeekHandler {
     }
     final track = _player.currentTrack;
     if (!_active || _stopped || track == null) return;
-    final itemChanged = _track != track || _duration != _player.duration;
+    final background =
+        _theme.systemWidgetUsesBackground ? _theme.widgetMediaPath : null;
+    final artChanged = _track != track || _background != background;
+    final itemChanged = artChanged || _duration != _player.duration;
     if (itemChanged) {
       _track = track;
+      _background = background;
       _duration = _player.duration;
-      mediaItem.add(MediaItem(
-        id: track.identity,
-        title: track.title,
-        artist: track.artist,
-        duration: _duration > Duration.zero ? _duration : null,
-        artUri: Uri.tryParse(track.artwork ?? '')?.hasScheme == true
-            ? Uri.parse(track.artwork!)
-            : null,
-      ));
+      if (artChanged) {
+        _art = null;
+        final request = ++_artRequest;
+        unawaited(TrackArtworkStore.resolve(track, background: background)
+            .then((file) {
+          if (file == null || _artRequest != request) return;
+          _art = file.uri;
+          _setItem(track);
+        }));
+      }
+      _setItem(track);
     }
     final state = (
       playing: _player.isPlaying,
@@ -106,6 +120,16 @@ class SystemMediaControls extends BaseAudioHandler with SeekHandler {
     ));
   }
 
+  void _setItem(PlaybackTrack track) {
+    mediaItem.add(MediaItem(
+      id: track.identity,
+      title: track.title,
+      artist: track.artist,
+      duration: _duration > Duration.zero ? _duration : null,
+      artUri: _art,
+    ));
+  }
+
   @override
   Future<void> play() =>
       _player.isPlaying ? Future.value() : _player.togglePlayPause();
@@ -122,6 +146,7 @@ class SystemMediaControls extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> stop() async {
     _stopped = true;
+    ++_artRequest;
     await _player.stop();
     _track = null;
     _lastState = null;

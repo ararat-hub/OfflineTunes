@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:offlinetunes/data/db/app_database.dart';
 import 'package:offlinetunes/data/models/equalizer.dart';
+import 'package:offlinetunes/data/models/music_query.dart';
 import 'package:offlinetunes/data/models/playback_track.dart';
 import 'package:offlinetunes/data/services/listening_history.dart';
 import 'package:offlinetunes/data/services/music_catalog.dart';
@@ -16,6 +17,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('Russian music search handles artist aliases and ё in track names', () {
+    expect(
+        MusicQuery('Виктор Цой Кукушка')
+            .matches('Viktor Tsoi - Kukushka', 'Jacku'),
+        isTrue);
+    expect(MusicQuery('Zemfira').matches('Земфира — Самолёты', 'SIDXKICK'),
+        isTrue);
+    expect(MusicQuery('самолеты').matches('Самолёты', 'Земфира'), isTrue);
+    expect(MusicQuery('Оксимирон').matches('Field of Snow', 'ThePurpleAnon'),
+        isFalse);
+  });
 
   test('search returns full recordings from Commons and pagination', () async {
     Map<String, Object> file(String name, double duration) => {
@@ -149,6 +162,43 @@ void main() {
     final entries = await catalog.popular();
     expect(entries.map((item) => item.track.title), ['B', 'C', 'A']);
     expect(entries.map((item) => item.plays), [7000, 1200, 400]);
+  });
+
+  test('popular retries other Audius nodes and keeps the last chart offline',
+      () async {
+    final attempts = <String>[];
+    var offline = false;
+    final catalog = MusicCatalog(MockClient((request) async {
+      attempts.add(request.url.host);
+      if (offline || attempts.length == 1) return http.Response('', 503);
+      return http.Response(
+          jsonEncode({
+            'data': [
+              {
+                'id': 'Track42',
+                'title': 'Full recording',
+                'duration': 190,
+                'permalink': '/artist/track-42',
+                'play_count': 500,
+                'artwork': {
+                  '150x150': 'https://one.example/content/cover/150x150.jpg',
+                  'mirrors': ['https://two.example', 'http://bad.example'],
+                },
+              },
+            ],
+          }),
+          200);
+    }));
+    final live = await catalog.popularWithCache();
+    expect(attempts, ['api.audius.co', 'discoveryprovider.audius.co']);
+    expect(live.cached, isFalse);
+    expect(live.tracks.single.track.artworkAlternatives,
+        ['https://two.example/content/cover/150x150.jpg']);
+    offline = true;
+    final cached = await catalog.popularWithCache();
+    expect(cached.cached, isTrue);
+    expect(
+        cached.tracks.single.track.toJson(), live.tracks.single.track.toJson());
   });
 
   test(

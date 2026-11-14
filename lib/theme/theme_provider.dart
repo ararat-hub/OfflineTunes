@@ -110,6 +110,7 @@ class ThemeProvider extends ChangeNotifier {
     'widgetFit': '',
     'widgetBlur': -1.0,
     'widgetMotion': '',
+    'systemWidgetArtwork': 'track',
     'loopFrom': 0,
     'loopTo': 0,
     'widgetLoopFrom': 0,
@@ -276,6 +277,8 @@ class ThemeProvider extends ChangeNotifier {
         'off' => false,
         _ => motion,
       };
+  bool get systemWidgetUsesBackground =>
+      _settings['systemWidgetArtwork'] == 'background';
   double get panelOpacity => _settings['panelOpacity'] as double;
   bool get showClock => _settings['showClock'] as bool;
   String get profileName => _settings['name'] as String;
@@ -499,12 +502,15 @@ class ThemeProvider extends ChangeNotifier {
       });
   Future<void> setWidgetBackground(String? path) => change({
         'widgetMediaPath': path ?? '',
+        if (Platform.isAndroid)
+          'systemWidgetArtwork': path == null ? 'track' : 'background',
         if (path != widgetMediaPath) 'widgetLoopFrom': 0,
         if (path != widgetMediaPath) 'widgetLoopTo': 0,
       });
 
   static const _widgetKeys = [
     'widgetMediaPath',
+    'systemWidgetArtwork',
     'widgetFit',
     'widgetBlur',
     'widgetMotion',
@@ -538,7 +544,9 @@ class ThemeProvider extends ChangeNotifier {
     if (clean.isEmpty) return;
     final saved = savedWidgets;
     final values = {for (final key in _widgetKeys) key: _settings[key]};
-    if (widgetMediaPath == null && mediaPath(compact: false) != null) {
+    if (!Platform.isAndroid &&
+        widgetMediaPath == null &&
+        mediaPath(compact: false) != null) {
       values['widgetMediaPath'] = mediaPath(compact: false);
       values['widgetLoopFrom'] = _settings['loopFrom'];
       values['widgetLoopTo'] = _settings['loopTo'];
@@ -553,7 +561,12 @@ class ThemeProvider extends ChangeNotifier {
     if (values != null) {
       await change({
         for (final key in _widgetKeys)
-          if (values.containsKey(key)) key: values[key]
+          if (values.containsKey(key)) key: values[key],
+        if (Platform.isAndroid && !values.containsKey('systemWidgetArtwork'))
+          'systemWidgetArtwork':
+              (values['widgetMediaPath'] as String? ?? '').isEmpty
+                  ? 'track'
+                  : 'background',
       });
     }
   }
@@ -591,6 +604,7 @@ class ThemeProvider extends ChangeNotifier {
       if (_isVideo(copied.path)) 'importedVideoName': copied.name,
       if (compact) ...{
         'widgetMediaPath': copied.path,
+        if (Platform.isAndroid) 'systemWidgetArtwork': 'background',
         'widgetLoopFrom': 0,
         'widgetLoopTo': 0,
       } else ...{

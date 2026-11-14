@@ -9,6 +9,7 @@ class PlaybackTrack {
   final String? sourcePage;
   final String? license;
   final String? artwork;
+  final List<String> artworkAlternatives;
   final String? downloadUrl;
   final bool youtube;
   final String? libraryId;
@@ -22,6 +23,7 @@ class PlaybackTrack {
       this.sourcePage,
       this.license,
       this.artwork,
+      this.artworkAlternatives = const [],
       this.downloadUrl,
       this.libraryId,
       this.originalPath,
@@ -54,6 +56,8 @@ class PlaybackTrack {
         'sourcePage': sourcePage,
         'license': license,
         'artwork': artwork,
+        if (artworkAlternatives.isNotEmpty)
+          'artworkAlternatives': artworkAlternatives,
         'downloadUrl': downloadUrl,
         'libraryId': libraryId,
         'originalPath': originalPath,
@@ -68,6 +72,10 @@ class PlaybackTrack {
         sourcePage: json['sourcePage'] as String?,
         license: json['license'] as String?,
         artwork: json['artwork'] as String?,
+        artworkAlternatives: (json['artworkAlternatives'] as List?)
+                ?.whereType<String>()
+                .toList() ??
+            const [],
         downloadUrl: json['downloadUrl'] as String?,
         libraryId: json['libraryId'] as String?,
         originalPath: json['originalPath'] as String?,
@@ -84,6 +92,7 @@ class PlaybackTrack {
         sourcePage: sourcePage,
         license: license,
         artwork: artwork,
+        artworkAlternatives: artworkAlternatives,
         downloadUrl: downloadUrl,
         youtube: youtube,
         libraryId: libraryId,

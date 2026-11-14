@@ -35,6 +35,33 @@ const _translations = <String, (String, String)>{
     'Enter a direct HTTPS link to an audio file to download it.',
     'Introduce un enlace HTTPS directo a un archivo de audio.'
   ),
+  'Ссылку YouTube можно воспроизвести здесь. Для офлайн-загрузки нужен аудиофайл.':
+      (
+    'Play this YouTube link here. To download for offline listening, use an audio file.',
+    'Reproduce aquí este enlace de YouTube. Para escuchar sin conexión, descarga un archivo de audio.'
+  ),
+  'Карточка Android': ('Android media card', 'Tarjeta multimedia de Android'),
+  'Использовать обложку трека': (
+    'Use track artwork',
+    'Usar la portada de la pista'
+  ),
+  'Использовать свой фон в карточке Android': (
+    'Use custom artwork in the Android media card',
+    'Usar una imagen personalizada en la tarjeta multimedia de Android'
+  ),
+  'Шторка уведомлений и экран блокировки используют обложку трека или выбранное изображение. Android задаёт размер и расположение кнопок.':
+      (
+    'The notification shade and lock screen use track artwork or the selected image. Android controls the size and button layout.',
+    'Las notificaciones y la pantalla de bloqueo usan la portada o la imagen elegida. Android determina el tamaño y la posición de los botones.'
+  ),
+  'Для видео в карточке используется кадр.': (
+    'The media card uses a still frame from your video.',
+    'La tarjeta usa un fotograma del vídeo.'
+  ),
+  'Выбрать фон карточки': (
+    'Choose card artwork',
+    'Elegir imagen de la tarjeta'
+  ),
   'Дата и время': ('Date and time', 'Fecha y hora'),
   'Часовой пояс': ('Time zone', 'Zona horaria'),
   'Как на устройстве': (
@@ -44,6 +71,10 @@ const _translations = <String, (String, String)>{
   'Найти часовой пояс': ('Find a time zone', 'Buscar zona horaria'),
   'Скачать': ('Download', 'Descargar'),
   'Скачано': ('Downloaded', 'Descargado'),
+  'Не удалось открыть загрузки.': (
+    'Could not open downloads.',
+    'No se pudieron abrir las descargas.'
+  ),
   'Скачивание': ('Downloading', 'Descargando'),
   'Удалить загрузку': ('Remove download', 'Eliminar descarga'),
   'Не удалось скачать трек.': (
@@ -104,6 +135,10 @@ const _translations = <String, (String, String)>{
   'По числу прослушиваний · Audius': (
     'Ranked by plays · Audius',
     'Por reproducciones · Audius'
+  ),
+  'Последняя сохранённая подборка Audius': (
+    'Last saved Audius chart',
+    'Última lista guardada de Audius'
   ),
   'Прослушиваний: {count}': ('Plays: {count}', 'Reproducciones: {count}'),
   'Здесь появятся треки, которые вы слушали несколько раз.': (
@@ -186,6 +221,23 @@ const _translations = <String, (String, String)>{
   'Проверить обновления': ('Check for updates', 'Buscar actualizaciones'),
   'Главная': ('Home', 'Inicio'),
   'Поиск': ('Search', 'Buscar'),
+  'Найти в чарте': ('Search this chart', 'Buscar en la lista'),
+  'Очистить поиск': ('Clear search', 'Borrar búsqueda'),
+  'Все жанры': ('All genres', 'Todos los géneros'),
+  'Электроника': ('Electronic', 'Electrónica'),
+  'Хип-хоп': ('Hip-hop', 'Hip hop'),
+  'Рок': ('Rock', 'Rock'),
+  'Поп': ('Pop', 'Pop'),
+  'Топ треков': ('Top tracks', 'Top canciones'),
+  'Воспроизвести подборку': ('Play chart', 'Reproducir la lista'),
+  'Открыть живой виджет': (
+    'Show widget instructions',
+    'Ver instrucciones del widget'
+  ),
+  'Сверните приложение во время воспроизведения.': (
+    'Leave the app while music is playing.',
+    'Sal de la aplicación mientras suena la música.'
+  ),
   'Медиатека': ('Library', 'Biblioteca'),
   'Избранное': ('Favorites', 'Favoritos'),
   'Добавить': ('Add', 'Añadir'),
@@ -317,10 +369,7 @@ const _translations = <String, (String, String)>{
   'Размытие': ('Blur', 'Desenfoque'),
   'Выключено': ('Off', 'Desactivado'),
   'Живой фон': ('Animate background', 'Animar el fondo'),
-  'Движение готовых тем и зацикливание видео': (
-    'Animate presets and loop videos',
-    'Animar estilos y repetir vídeos'
-  ),
+  'Движение готовых тем': ('Animate presets', 'Animar estilos'),
   'Акцент и интерфейс': ('Accent and interface', 'Color de acento e interfaz'),
   'Цвет {hex}': ('Color {hex}', 'Color {hex}'),
   'Шрифт': ('Font', 'Fuente'),

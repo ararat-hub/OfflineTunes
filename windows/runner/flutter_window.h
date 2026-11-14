@@ -33,6 +33,8 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> hotkeys_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> compact_window_;
+  bool minimize_to_widget_ = true;
   std::array<std::optional<std::pair<UINT, UINT>>, 5> bindings_;
 
   bool BindHotkey(int id, UINT modifiers, UINT key);

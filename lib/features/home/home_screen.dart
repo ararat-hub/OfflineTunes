@@ -3,6 +3,7 @@ import '../../core/strings.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../data/db/app_database.dart';
@@ -14,7 +15,7 @@ import '../../data/services/update_service.dart';
 import '../../data/services/youtube_player_service.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/app_backdrop.dart';
-import '../../widgets/appearance_editor.dart';
+import '../../widgets/appearance_editor.dart' show ProfileAvatar;
 import '../../widgets/mini_player.dart';
 import '../../widgets/player_controls.dart';
 import '../../widgets/player_clock.dart';
@@ -38,6 +39,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  static const _compactChannel = MethodChannel('otune/compact_window');
+  AudioPlayerService? _compactAudio;
+  YoutubePlayerService? _compactYoutube;
+  bool _mobileCompact = false;
+  bool? _autoCompact;
   int _selectedIndex = 0;
   StreamSubscription<HotkeyAction>? _hotkeys;
   Timer? _updateTimer;
@@ -67,6 +73,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (Platform.isAndroid) {
+      _compactAudio = context.read<AudioPlayerService>()
+        ..addListener(_syncCompact);
+      _compactYoutube = context.read<YoutubePlayerService>()
+        ..addListener(_syncCompact);
+      _compactChannel.setMethodCallHandler((call) async {
+        if (call.method == 'changed') _setMobileCompact(call.arguments == true);
+      });
+      unawaited(_readMobileCompact());
+      _syncCompact();
+    }
     _updateTimer = Timer.periodic(const Duration(minutes: 30), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         unawaited(_checkUpdates());
@@ -107,6 +124,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) unawaited(_checkUpdates());
+    if (Platform.isAndroid && state == AppLifecycleState.paused) {
+      unawaited(context.read<YoutubePlayerService>().pauseForVisibility());
+    }
   }
 
   void _navigate(int index) => setState(() => _selectedIndex = index);
@@ -165,10 +185,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _compactAudio?.removeListener(_syncCompact);
+    _compactYoutube?.removeListener(_syncCompact);
+    if (Platform.isAndroid) _compactChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     _updateTimer?.cancel();
     unawaited(_hotkeys?.cancel());
     super.dispose();
+  }
+
+  void _syncCompact() {
+    final enabled = _compactAudio!.isPlaying && !_compactYoutube!.active;
+    if (_autoCompact == enabled) return;
+    _autoCompact = enabled;
+    unawaited(_configureMobileCompact(enabled));
+  }
+
+  Future<void> _configureMobileCompact(bool enabled) async {
+    try {
+      await _compactChannel.invokeMethod<void>('configure', enabled);
+    } on PlatformException catch (error) {
+      debugPrint('Android compact window: $error');
+    }
+  }
+
+  Future<void> _readMobileCompact() async {
+    try {
+      _setMobileCompact(
+          await _compactChannel.invokeMethod<bool>('state') == true);
+    } on PlatformException catch (error) {
+      debugPrint('Android compact window: $error');
+    }
+  }
+
+  void _setMobileCompact(bool compact) {
+    if (mounted && _mobileCompact != compact) {
+      setState(() => _mobileCompact = compact);
+    }
   }
 
   @override
@@ -176,6 +229,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final theme = context.watch<ThemeProvider>();
     final window = context.watch<DesktopWindowService>();
     final youtube = context.watch<YoutubePlayerService>();
+    final compact = window.compact || _mobileCompact;
     final fullWatchPage = youtube.watchPage && _selectedIndex == 4;
     final navigationIndex =
         _navigation.indexWhere((item) => item.$1 == _selectedIndex);
@@ -195,9 +249,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           borderRadius:
               BorderRadius.circular(window.compact ? theme.widgetRadius : 0),
           child: Stack(fit: StackFit.expand, children: [
-            AppBackdrop(theme: theme, compact: window.compact),
+            AppBackdrop(
+                theme: theme,
+                compact: compact,
+                visibleInBackground: _mobileCompact),
             if (window.compact)
               DragToResizeArea(child: _FloatingPlayer(onEdit: _editFromWidget))
+            else if (_mobileCompact)
+              const _AndroidCompactPlayer()
             else if (Platform.isAndroid)
               Positioned.fill(
                   child: SafeArea(
@@ -458,6 +517,38 @@ class _FloatingPlayer extends StatelessWidget {
   }
 }
 
+class _AndroidCompactPlayer extends StatelessWidget {
+  const _AndroidCompactPlayer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioPlayerService, (String, String, bool)>(
+      selector: (_, audio) =>
+          (audio.currentTitle, audio.currentArtist, audio.isPlaying),
+      builder: (context, track, _) => Align(
+        alignment: Alignment.bottomCenter,
+        child: ColoredBox(
+          color: Colors.black54,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(children: [
+              Expanded(
+                  child: Text(
+                track.$2.isEmpty ? track.$1 : '${track.$1} · ${track.$2}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+              )),
+              Icon(track.$3 ? Icons.pause : Icons.play_arrow,
+                  size: 15, color: Colors.white),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MobilePlayerBar extends StatelessWidget {
   const _MobilePlayerBar({required this.audio, required this.opacity});
   final AudioPlayerService audio;
@@ -608,12 +699,17 @@ class _Dashboard extends StatelessWidget {
                           icon: const Icon(Icons.link),
                           label: Text(context.tr('YouTube / ссылка'))),
                       OutlinedButton.icon(
-                          onPressed: () => context
-                              .read<DesktopWindowService>()
-                              .enterWidget(theme,
-                                  youtube: context
-                                      .read<YoutubePlayerService>()
-                                      .active),
+                          onPressed: () {
+                            if (Platform.isAndroid) {
+                              onNavigate(5);
+                              return;
+                            }
+                            context.read<DesktopWindowService>().enterWidget(
+                                theme,
+                                youtube: context
+                                    .read<YoutubePlayerService>()
+                                    .active);
+                          },
                           icon: const Icon(Icons.picture_in_picture_alt),
                           label: Text(context.tr('Виджет'))),
                     ]),

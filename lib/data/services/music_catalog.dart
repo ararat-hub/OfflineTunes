@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/playback_track.dart';
+import '../models/music_query.dart';
 
 enum CatalogSource { audius, commons }
 
@@ -11,8 +13,13 @@ class MusicCatalog {
 
   final http.Client _client;
   static const _host = 'commons.wikimedia.org';
-  static const userAgent =
-      'OfflineTunes/1.4 (https://github.com/ararat-hub/OfflineTunes)';
+  static const userAgent = 'oTune (https://github.com/ararat-hub/OfflineTunes)';
+  static const _audiusHosts = [
+    'api.audius.co',
+    'discoveryprovider.audius.co',
+    'discoveryprovider2.audius.co',
+  ];
+  static const _popularCacheKey = 'audius_popular_v1';
 
   Future<CatalogPage> search(String query,
       {int offset = 0, CatalogSource source = CatalogSource.commons}) async {
@@ -36,37 +43,112 @@ class MusicCatalog {
   }
 
   Future<CatalogPage> _searchAudius(String term, int offset) async {
-    const limit = 30;
-    final uri = Uri.https('api.audius.co', '/v1/tracks/search', {
-      'query': term,
-      'limit': '$limit',
-      'offset': '$offset',
-      'app_name': 'OfflineTunes',
-    });
-    try {
-      return parseAudiusPage(await _request(uri), offset: offset, limit: limit);
-    } on Exception {
-      final fallback = uri.replace(host: 'discoveryprovider.audius.co');
-      return parseAudiusPage(await _request(fallback),
-          offset: offset, limit: limit);
+    final query = MusicQuery(term);
+    final primary = await _audiusSearch(term, offset);
+    if (offset != 0 || query.variants.length < 2) return primary;
+    bool relevant(CatalogTrack item) =>
+        query.matches(item.track.title, item.track.artist);
+    final tracks = primary.tracks.where(relevant).toList();
+    if (tracks.length >= 6 && !query.hasArtistAlias) {
+      return CatalogPage(tracks, primary.nextOffset);
     }
+    final seen = tracks.map((item) => item.track.identity).toSet();
+    for (final variant in query.variants.skip(1)) {
+      if (variant == term) continue;
+      try {
+        final extra = await _audiusSearch(variant, 0);
+        tracks.addAll(extra.tracks
+            .where((item) => relevant(item) && seen.add(item.track.identity)));
+      } on Exception {
+        // The primary result remains usable if the alternate spelling fails.
+      }
+    }
+    tracks.sort((a, b) => query
+        .score(b.track.title, b.track.artist)
+        .compareTo(query.score(a.track.title, a.track.artist)));
+    return CatalogPage(tracks, primary.nextOffset);
   }
 
-  Future<List<CatalogTrack>> popular() async {
-    final uri = Uri.https('api.audius.co', '/v1/tracks/trending', {
-      'time': 'allTime',
-      'limit': '100',
-      'app_name': 'OfflineTunes',
-    });
-    final page = parseAudiusPage(await _request(uri), offset: 0, limit: 100);
+  Future<CatalogPage> _audiusSearch(String term, int offset) {
+    const limit = 30;
+    return _audiusPage(
+        '/v1/tracks/search',
+        {
+          'query': term,
+          'sort_method': 'relevant',
+          'limit': '$limit',
+          'offset': '$offset',
+        },
+        offset: offset,
+        limit: limit);
+  }
+
+  Future<List<CatalogTrack>> popular({String? genre}) async {
+    final page = await _audiusPage(
+        '/v1/tracks/trending',
+        {
+          'time': 'allTime',
+          'limit': '50',
+          if (genre != null) 'genre': genre,
+        },
+        offset: 0,
+        limit: 50);
     final tracks = page.tracks.where((track) => (track.plays ?? 0) > 0).toList()
       ..sort((a, b) => b.plays!.compareTo(a.plays!));
     return tracks.take(30).toList();
   }
 
-  Future<Object?> _request(Uri uri) async {
-    final response = await _client.get(uri,
-        headers: {'User-Agent': userAgent}).timeout(const Duration(seconds: 8));
+  Future<({List<CatalogTrack> tracks, bool cached})> popularWithCache(
+      {String? genre}) async {
+    final preferences = await SharedPreferences.getInstance();
+    final key = genre == null ? _popularCacheKey : '${_popularCacheKey}_$genre';
+    try {
+      final tracks = await popular(genre: genre);
+      if (tracks.isNotEmpty) {
+        await preferences.setString(
+            key, jsonEncode(tracks.map((item) => item.toJson()).toList()));
+      }
+      return (tracks: tracks, cached: false);
+    } on Exception {
+      final saved = preferences.getString(key);
+      if (saved != null) {
+        try {
+          final records = jsonDecode(saved) as List;
+          return (
+            tracks: records.map((item) => CatalogTrack.fromJson(item)).toList(),
+            cached: true
+          );
+        } catch (_) {
+          // A stale or corrupt cache should not hide the catalog error.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<CatalogPage> _audiusPage(String path, Map<String, String> parameters,
+      {required int offset, required int limit}) async {
+    Exception? failure;
+    for (final host in _audiusHosts) {
+      try {
+        final response = await _request(
+            Uri.https(host, path, {
+              ...parameters,
+              'app_name': 'OfflineTunes',
+            }),
+            timeout: const Duration(seconds: 4));
+        return parseAudiusPage(response, offset: offset, limit: limit);
+      } on Exception catch (error) {
+        failure = error;
+      }
+    }
+    throw failure!;
+  }
+
+  Future<Object?> _request(Uri uri,
+      {Duration timeout = const Duration(seconds: 8)}) async {
+    final response = await _client
+        .get(uri, headers: {'User-Agent': userAgent}).timeout(timeout);
     if (response.statusCode != 200) {
       throw http.ClientException('${uri.host}: ${response.statusCode}', uri);
     }
@@ -105,7 +187,11 @@ class MusicCatalog {
       final user = item['user'];
       final plays = item['play_count'];
       final images = item['artwork'];
-      final artwork = images is Map ? _https(images['150x150']) : null;
+      final artwork = images is Map
+          ? _https(images['150x150']) ?? _https(images['480x480'])
+          : null;
+      final mirrors = images is Map ? images['mirrors'] : null;
+      final artworkUri = artwork == null ? null : Uri.parse(artwork);
       final canDownload =
           item['is_downloadable'] == true && item['is_download_gated'] == false;
       result.add(CatalogTrack(
@@ -117,6 +203,12 @@ class MusicCatalog {
           genre: item['genre']?.toString(),
           sourcePage: Uri.https('audius.co', permalink).toString(),
           artwork: artwork,
+          artworkAlternatives: [
+            if (artworkUri != null && mirrors is List)
+              for (final node in mirrors.take(4))
+                if (_https(node) case final String url)
+                  Uri.parse(url).replace(path: artworkUri.path).toString(),
+          ],
           downloadUrl: canDownload
               ? Uri.https('api.audius.co', '/v1/tracks/$id/download',
                   {'app_name': 'oTune', 'original': 'false'}).toString()
@@ -226,6 +318,14 @@ class CatalogTrack {
   final PlaybackTrack track;
   final Duration duration;
   final int? plays;
+
+  Map<String, Object?> toJson() =>
+      {'track': track.toJson(), 'ms': duration.inMilliseconds, 'plays': plays};
+
+  factory CatalogTrack.fromJson(Map<String, dynamic> json) => CatalogTrack(
+      PlaybackTrack.fromJson(json['track'] as Map<String, dynamic>),
+      Duration(milliseconds: json['ms'] as int),
+      plays: json['plays'] as int?);
 }
 
 class CatalogPage {

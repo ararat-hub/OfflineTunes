@@ -1,12 +1,26 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../theme/theme_provider.dart';
 
 class DesktopWindowService extends ChangeNotifier with WindowListener {
   final Future<void> Function()? onMinimize;
-  DesktopWindowService({this.onMinimize}) {
-    if (Platform.isWindows) windowManager.addListener(this);
+  final ThemeProvider? theme;
+  final bool Function()? youtubeActive;
+  static const _compactChannel = MethodChannel('otune/compact_window');
+  DesktopWindowService({this.onMinimize, this.theme, this.youtubeActive}) {
+    if (Platform.isWindows) {
+      windowManager.addListener(this);
+      if (theme != null) {
+        _compactChannel.setMethodCallHandler((call) async {
+          if (call.method == 'minimizeToWidget') {
+            await enterWidget(theme!, youtube: youtubeActive?.call() ?? false);
+          }
+        });
+      }
+    }
   }
   bool _compact = false;
   bool _busy = false;
@@ -29,6 +43,7 @@ class DesktopWindowService extends ChangeNotifier with WindowListener {
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden,
           windowButtonVisibility: false);
       await windowManager.setAlwaysOnTop(theme.widgetOnTop);
+      await _configureMinimize(false);
       _compact = true;
       notifyListeners();
       await windowManager.setSize(Size(
@@ -54,6 +69,7 @@ class DesktopWindowService extends ChangeNotifier with WindowListener {
           .setBounds(_normalBounds ?? const Rect.fromLTWH(50, 50, 1280, 760));
       if (_wasMaximized) await windowManager.maximize();
       _compact = false;
+      await _configureMinimize(true);
       error = null;
     } catch (e) {
       debugPrint('Restore player window: $e');
@@ -66,14 +82,25 @@ class DesktopWindowService extends ChangeNotifier with WindowListener {
   Future<void> drag() => windowManager.startDragging();
   Future<void> setPinned(bool value) => windowManager.setAlwaysOnTop(value);
   Future<void> minimize() => windowManager.minimize();
+  Future<void> _configureMinimize(bool enabled) async {
+    try {
+      await _compactChannel.invokeMethod<void>('configure', enabled);
+    } on MissingPluginException {
+      // Only the Windows runner owns the native minimize button.
+    }
+  }
+
   @override
   void onWindowMinimize() {
-    onMinimize?.call();
+    unawaited(onMinimize?.call());
   }
 
   @override
   void dispose() {
-    if (Platform.isWindows) windowManager.removeListener(this);
+    if (Platform.isWindows) {
+      windowManager.removeListener(this);
+      if (theme != null) _compactChannel.setMethodCallHandler(null);
+    }
     super.dispose();
   }
 }

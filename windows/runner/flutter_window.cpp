@@ -84,6 +84,22 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  compact_window_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "otune/compact_window",
+      &flutter::StandardMethodCodec::GetInstance());
+  compact_window_->SetMethodCallHandler([this](const auto& call, auto result) {
+    if (call.method_name() != "configure") {
+      result->NotImplemented();
+      return;
+    }
+    const auto* enabled = std::get_if<bool>(call.arguments());
+    if (!enabled) {
+      result->Error("invalid_arguments");
+      return;
+    }
+    minimize_to_widget_ = *enabled;
+    result->Success();
+  });
   flutter::MethodChannel<flutter::EncodableValue> thumbnails(
       flutter_controller_->engine()->messenger(), "otune/background_thumbnail",
       &flutter::StandardMethodCodec::GetInstance());
@@ -139,6 +155,10 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (compact_window_) {
+    compact_window_->SetMethodCallHandler(nullptr);
+    compact_window_.reset();
+  }
   if (hotkeys_) {
     hotkeys_->SetMethodCallHandler(nullptr);
     hotkeys_.reset();
@@ -185,6 +205,11 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == WM_SYSCOMMAND && (wparam & 0xfff0) == SC_MINIMIZE &&
+      compact_window_ && minimize_to_widget_) {
+    compact_window_->InvokeMethod("minimizeToWidget", nullptr);
+    return 0;
+  }
   if (message == WM_HOTKEY && hotkeys_ && wparam < bindings_.size() &&
       bindings_[wparam]) {
     hotkeys_->InvokeMethod("pressed", std::make_unique<flutter::EncodableValue>(

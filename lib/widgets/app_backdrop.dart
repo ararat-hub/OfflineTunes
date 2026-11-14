@@ -14,11 +14,13 @@ class AppBackdrop extends StatefulWidget {
   final ThemeProvider theme;
   final bool compact;
   final bool preview;
+  final bool visibleInBackground;
   const AppBackdrop(
       {super.key,
       required this.theme,
       this.compact = false,
-      this.preview = false});
+      this.preview = false,
+      this.visibleInBackground = false});
   @override
   State<AppBackdrop> createState() => _AppBackdropState();
 }
@@ -58,11 +60,12 @@ class _AppBackdropState extends State<AppBackdrop>
   void _sync() {
     final theme = widget.theme;
     final backgroundType = theme.backgroundType(compact: widget.compact);
-    final animate = theme.backdropMotion(widget.compact) &&
-        !_minimized &&
-        !_backgrounded &&
+    final visible = !_minimized &&
+        (!_backgrounded || widget.visibleInBackground) &&
         !widget.preview;
-    if (animate && backgroundType == BackgroundType.ambient) {
+    if (visible &&
+        theme.backdropMotion(widget.compact) &&
+        backgroundType == BackgroundType.ambient) {
       _ambientTime.start();
       _ambientTimer ??= Timer.periodic(const Duration(milliseconds: 33), (_) {
         final period = _ambientPeriod.inMilliseconds;
@@ -78,7 +81,7 @@ class _AppBackdropState extends State<AppBackdrop>
         ? theme.mediaPath(compact: widget.compact)
         : null;
     final loop = path == null ? null : theme.videoLoop(compact: widget.compact);
-    final request = (path, path != null && animate, loop);
+    final request = (path, path != null && visible, loop);
     if (_requestedVideo == request) return;
     _requestedVideo = request;
     _operations = _operations.then((_) async {
@@ -118,18 +121,21 @@ class _AppBackdropState extends State<AppBackdrop>
           });
           setState(() => _error = null);
           await _player!.setVolume(0);
-          await _player!.setPlaylistMode(PlaylistMode.single);
           await _player!.open(
             Media(
               path,
               start: loop!.from > 0 ? Duration(seconds: loop.from) : null,
               end: loop.to == null ? null : Duration(seconds: loop.to!),
             ),
-            play: _requestedVideo.$2,
+            play: false,
           );
+          await _player!.setAudioTrack(AudioTrack.no());
+          await _player!.setPlaylistMode(PlaylistMode.single);
           _path = path;
           _loadedLoop = loop;
-        } else if (animate) {
+        }
+        if (!mounted || request != _requestedVideo) return;
+        if (visible) {
           await _player!.play();
         } else {
           await _player!.pause();
@@ -190,6 +196,7 @@ class _AppBackdropState extends State<AppBackdrop>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (Platform.isWindows) return;
     _backgrounded =
         state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
     _sync();

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import '../data/models/media_link.dart';
 import '../data/services/audio_player_service.dart';
 import '../data/services/favorite_tracks.dart';
 import '../data/services/offline_tracks.dart';
+import '../data/services/track_artwork_store.dart';
 import '../data/services/youtube_player_service.dart';
 
 void playHistoryTrack(
@@ -34,20 +36,23 @@ class TrackRow extends StatelessWidget {
       required this.onPlay,
       this.duration,
       this.playCount,
+      this.rank,
       this.trailing});
 
   final PlaybackTrack track;
   final VoidCallback onPlay;
   final Duration? duration;
   final int? playCount;
+  final int? rank;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final time = duration?.inSeconds;
+    final narrowChart = rank != null && MediaQuery.sizeOf(context).width < 560;
     final metadata = [
       if (track.artist.isNotEmpty) track.artist,
-      if (time != null)
+      if (time != null && rank == null)
         '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
       if (track.license != null) track.license!,
       if (playCount != null)
@@ -58,45 +63,114 @@ class TrackRow extends StatelessWidget {
         }),
     ];
     return ListTile(
-      leading: TrackArtwork(track: track),
+      horizontalTitleGap: rank == null ? null : 12,
+      contentPadding:
+          rank == null ? null : const EdgeInsets.symmetric(horizontal: 4),
+      leading: rank == null
+          ? TrackArtwork(track: track)
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                    width: 23,
+                    child: Text('$rank',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.labelMedium)),
+                const SizedBox(width: 8),
+                TrackArtwork(track: track),
+              ],
+            ),
       title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: metadata.isEmpty
           ? null
           : Text(metadata.join(' · '),
               maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: trailing ?? TrackActions(track: track, duration: duration),
+      trailing: trailing ??
+          (rank == null
+              ? TrackActions(track: track, duration: duration)
+              : Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (time != null)
+                    Text(
+                        '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
+                        style: Theme.of(context).textTheme.labelMedium),
+                  if (!narrowChart) FavoriteTrackButton(track: track),
+                  IconButton(
+                    icon: const Icon(Icons.more_horiz),
+                    tooltip: context.tr('О треке'),
+                    onPressed: () => showModalBottomSheet<void>(
+                      context: context,
+                      builder: (sheet) => SafeArea(
+                          child: ListTile(
+                        leading: TrackArtwork(track: track),
+                        title: Text(track.title),
+                        subtitle: Text(track.artist),
+                        trailing:
+                            TrackActions(track: track, duration: duration),
+                      )),
+                    ),
+                  ),
+                ])),
       onTap: onPlay,
     );
   }
 }
 
-class TrackArtwork extends StatelessWidget {
+class TrackArtwork extends StatefulWidget {
   const TrackArtwork({super.key, this.track, this.size = 42});
   final PlaybackTrack? track;
   final double size;
 
   @override
+  State<TrackArtwork> createState() => _TrackArtworkState();
+}
+
+class _TrackArtworkState extends State<TrackArtwork> {
+  late var _file =
+      widget.track == null ? null : TrackArtworkStore.resolve(widget.track!);
+
+  @override
+  void didUpdateWidget(covariant TrackArtwork oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final before = oldWidget.track;
+    final next = widget.track;
+    if (before?.path != next?.path ||
+        before?.artwork != next?.artwork ||
+        !listEquals(before?.artworkAlternatives, next?.artworkAlternatives)) {
+      _file = next == null ? null : TrackArtworkStore.resolve(next);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final size = widget.size;
     final fallback = ColoredBox(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Center(
           child: Icon(
-              track?.youtube == true
+              widget.track?.youtube == true
                   ? Icons.smart_display_outlined
                   : Icons.music_note_rounded,
               size: size * .48)),
     );
-    final url = track?.artwork;
     return ClipRRect(
         borderRadius: BorderRadius.circular(7),
         child: SizedBox.square(
           dimension: size,
-          child: url == null
+          child: _file == null
               ? fallback
-              : Image.network(url,
-                  fit: BoxFit.cover,
-                  cacheWidth: size < 100 ? 128 : null,
-                  errorBuilder: (_, __, ___) => fallback),
+              : FutureBuilder(
+                  future: _file,
+                  builder: (context, snapshot) {
+                    final file = snapshot.data;
+                    if (file == null ||
+                        snapshot.connectionState != ConnectionState.done) {
+                      return fallback;
+                    }
+                    return Image.file(file,
+                        fit: BoxFit.cover,
+                        cacheWidth: size < 100 ? 128 : null,
+                        errorBuilder: (_, __, ___) => fallback);
+                  }),
         ));
   }
 }

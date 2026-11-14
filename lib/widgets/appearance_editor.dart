@@ -15,6 +15,7 @@ import 'background_thumbnail.dart';
 
 class AppearanceEditor extends StatefulWidget {
   const AppearanceEditor({super.key});
+
   @override
   State<AppearanceEditor> createState() => _AppearanceEditorState();
 }
@@ -26,6 +27,7 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
   final _style = GlobalKey(),
       _background = GlobalKey(),
       _interface = GlobalKey(),
+      _systemMedia = GlobalKey(),
       _widget = GlobalKey();
 
   Future<void> _saveWidget(ThemeProvider theme) async {
@@ -198,7 +200,8 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
           (_style, 'Готовый стиль'),
           (_background, 'Свой фон'),
           (_interface, 'Акцент и интерфейс'),
-          (_widget, 'Виджет плеера')
+          (_widget, 'Виджет плеера'),
+          if (Platform.isAndroid) (_systemMedia, 'Карточка Android'),
         ])
           TextButton(
               onPressed: () {
@@ -350,49 +353,97 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
                 label: Text('${context.tr('Участок повтора')} · '
                     '${loop.from}–${loop.to?.toString() ?? context.tr('до конца')}'),
               ),
-            const SizedBox(height: 16),
-            Wrap(spacing: 8, children: [
-              ChoiceChip(
-                  label: Text(context.tr('Заполнить без искажения')),
-                  selected:
-                      theme.backdropFit(_widgetBackground) == BoxFit.cover,
-                  onSelected: (_) => theme.change(
-                      {_widgetBackground ? 'widgetFit' : 'fit': 'cover'})),
-              ChoiceChip(
-                  label: Text(context.tr('Показать целиком')),
-                  selected:
-                      theme.backdropFit(_widgetBackground) == BoxFit.contain,
-                  onSelected: (_) => theme.change(
-                      {_widgetBackground ? 'widgetFit' : 'fit': 'contain'})),
-            ]),
-            SettingSlider(
-                label: context.tr('Затемнение фона'),
-                value: _widgetBackground ? theme.widgetDim : theme.dim,
-                max: .85,
-                display:
-                    '${((_widgetBackground ? theme.widgetDim : theme.dim) * 100).round()}%',
-                onChanged: (v) =>
-                    theme.change({_widgetBackground ? 'widgetDim' : 'dim': v})),
-            SettingSlider(
-                label: context.tr('Размытие'),
-                value: theme.backdropBlur(_widgetBackground),
-                max: 16,
-                display: theme.backdropBlur(_widgetBackground) == 0
-                    ? context.tr('Выключено')
-                    : '${theme.backdropBlur(_widgetBackground).round()}',
-                onChanged: (v) => theme
-                    .change({_widgetBackground ? 'widgetBlur' : 'blur': v})),
-            SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(context.tr('Живой фон')),
-                subtitle: Text(
-                    context.tr('Движение готовых тем и зацикливание видео')),
-                value: theme.backdropMotion(_widgetBackground),
-                onChanged: (v) => theme.change(_widgetBackground
-                    ? {'widgetMotion': v ? 'on' : 'off'}
-                    : {'motion': v})),
+            ...[
+              const SizedBox(height: 16),
+              Wrap(spacing: 8, children: [
+                ChoiceChip(
+                    label: Text(context.tr('Заполнить без искажения')),
+                    selected:
+                        theme.backdropFit(_widgetBackground) == BoxFit.cover,
+                    onSelected: (_) => theme.change(
+                        {_widgetBackground ? 'widgetFit' : 'fit': 'cover'})),
+                ChoiceChip(
+                    label: Text(context.tr('Показать целиком')),
+                    selected:
+                        theme.backdropFit(_widgetBackground) == BoxFit.contain,
+                    onSelected: (_) => theme.change(
+                        {_widgetBackground ? 'widgetFit' : 'fit': 'contain'})),
+              ]),
+              SettingSlider(
+                  label: context.tr('Затемнение фона'),
+                  value: _widgetBackground ? theme.widgetDim : theme.dim,
+                  max: .85,
+                  display:
+                      '${((_widgetBackground ? theme.widgetDim : theme.dim) * 100).round()}%',
+                  onChanged: (v) => theme
+                      .change({_widgetBackground ? 'widgetDim' : 'dim': v})),
+              SettingSlider(
+                  label: context.tr('Размытие'),
+                  value: theme.backdropBlur(_widgetBackground),
+                  max: 16,
+                  display: theme.backdropBlur(_widgetBackground) == 0
+                      ? context.tr('Выключено')
+                      : '${theme.backdropBlur(_widgetBackground).round()}',
+                  onChanged: (v) => theme
+                      .change({_widgetBackground ? 'widgetBlur' : 'blur': v})),
+              SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(context.tr('Живой фон')),
+                  subtitle: Text(context.tr('Движение готовых тем')),
+                  value: theme.backdropMotion(_widgetBackground),
+                  onChanged: (v) => theme.change(_widgetBackground
+                      ? {'widgetMotion': v ? 'on' : 'off'}
+                      : {'motion': v})),
+            ],
           ])),
       const SizedBox(height: 18),
+      if (Platform.isAndroid)
+        _EditorCard(
+          key: _systemMedia,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _SectionTitle(
+                context.tr('Карточка Android'),
+                context.tr(
+                    'Шторка уведомлений и экран блокировки используют обложку трека или выбранное изображение. Android задаёт размер и расположение кнопок.')),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title:
+                  Text(context.tr('Использовать свой фон в карточке Android')),
+              subtitle:
+                  Text(context.tr('Для видео в карточке используется кадр.')),
+              value: theme.systemWidgetUsesBackground,
+              onChanged: (value) => theme.change({
+                'systemWidgetArtwork': value ? 'background' : 'track',
+              }),
+            ),
+            if (theme.widgetMediaPath case final String path)
+              BackgroundThumbnail(path: path),
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              TextButton.icon(
+                  icon: const Icon(Icons.image_outlined),
+                  label: Text(context.tr('Выбрать фон карточки')),
+                  onPressed: () {
+                    setState(() => _widgetBackground = true);
+                    final target = _background.currentContext;
+                    if (target != null) {
+                      Scrollable.ensureVisible(target,
+                          duration: const Duration(milliseconds: 250));
+                    }
+                  }),
+              OutlinedButton.icon(
+                  onPressed: () => _saveWidget(theme),
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: Text(context.tr('Сохранить виджет'))),
+              if (theme.savedWidgets.isNotEmpty)
+                OutlinedButton.icon(
+                    onPressed: () => _savedWidgets(theme),
+                    icon: const Icon(Icons.widgets_outlined),
+                    label: Text(context.tr('Сохранённые виджеты'))),
+            ]),
+          ]),
+        ),
       _EditorCard(
           key: _interface,
           child:
@@ -476,9 +527,7 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             _SectionTitle(
                 context.tr(
                     Platform.isAndroid ? 'Виджет плеера' : 'Плавающий виджет'),
-                context.tr(Platform.isAndroid
-                    ? 'Компактный плеер с отдельным фоном и сохранёнными стилями.'
-                    : 'Та же музыка и тот же фон в компактном окне поверх других приложений.')),
+                ''),
             _WidgetPreview(theme: theme),
             const SizedBox(height: 16),
             Wrap(spacing: 8, children: [
@@ -547,24 +596,19 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilledButton.icon(
                   onPressed: () {
-                    if (Platform.isWindows) {
-                      context.read<DesktopWindowService>().enterWidget(theme,
-                          youtube: context.read<YoutubePlayerService>().active);
-                    } else {
-                      final player = context.read<AudioPlayerService>();
-                      showDialog<void>(
-                          context: context,
-                          builder: (dialog) => Dialog(
-                              child: _WidgetPreview(
-                                  theme: theme,
-                                  player: player,
-                                  interactive: true)));
+                    if (Platform.isAndroid) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(context.tr(
+                              'Сверните приложение во время воспроизведения.'))));
+                      return;
                     }
+                    context.read<DesktopWindowService>().enterWidget(theme,
+                        youtube: context.read<YoutubePlayerService>().active);
                   },
                   icon: const Icon(Icons.picture_in_picture_alt),
-                  label: Text(context.tr(Platform.isWindows
-                      ? 'Открыть плавающий виджет'
-                      : 'Открыть виджет'))),
+                  label: Text(context.tr(Platform.isAndroid
+                      ? 'Открыть живой виджет'
+                      : 'Открыть плавающий виджет'))),
               OutlinedButton.icon(
                   onPressed: () => _saveWidget(theme),
                   icon: const Icon(Icons.bookmark_add_outlined),
@@ -586,15 +630,12 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
 }
 
 class _WidgetPreview extends StatelessWidget {
-  const _WidgetPreview(
-      {required this.theme, this.player, this.interactive = false});
+  const _WidgetPreview({required this.theme});
   final ThemeProvider theme;
-  final AudioPlayerService? player;
-  final bool interactive;
 
   @override
   Widget build(BuildContext context) {
-    final audio = player ?? context.read<AudioPlayerService>();
+    final audio = context.read<AudioPlayerService>();
     final opacity = switch (theme.widgetStyle) {
       WidgetStyle.glass => theme.panelOpacity,
       WidgetStyle.solid => .85,
@@ -610,8 +651,7 @@ class _WidgetPreview extends StatelessWidget {
                 width: theme.widgetWidth * scale,
                 height: theme.widgetHeight * scale,
                 child: Stack(fit: StackFit.expand, children: [
-                  AppBackdrop(
-                      theme: theme, compact: true, preview: !interactive),
+                  AppBackdrop(theme: theme, compact: true, preview: true),
                   DecoratedBox(
                       decoration: BoxDecoration(
                           border: Border.all(color: Colors.white38),
@@ -631,9 +671,7 @@ class _WidgetPreview extends StatelessWidget {
                             ColoredBox(
                                 color: Colors.black.withValues(alpha: opacity),
                                 child: _WidgetPreviewControls(
-                                    audio: audio,
-                                    theme: theme,
-                                    interactive: interactive)),
+                                    audio: audio, theme: theme)),
                           ]))),
                 ]),
               )));
@@ -642,11 +680,9 @@ class _WidgetPreview extends StatelessWidget {
 }
 
 class _WidgetPreviewControls extends StatelessWidget {
-  const _WidgetPreviewControls(
-      {required this.audio, required this.theme, required this.interactive});
+  const _WidgetPreviewControls({required this.audio, required this.theme});
   final AudioPlayerService audio;
   final ThemeProvider theme;
-  final bool interactive;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -674,21 +710,9 @@ class _WidgetPreviewControls extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                 ])),
-            if (interactive)
-              IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip:
-                      context.tr(audio.isPlaying ? 'Пауза' : 'Воспроизвести'),
-                  onPressed: audio.hasTrack ? audio.togglePlayPause : null,
-                  icon: Icon(
-                      audio.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      size: 20))
-            else
-              const Padding(
-                  padding: EdgeInsets.all(3),
-                  child: Icon(Icons.play_arrow_rounded, size: 18)),
+            const Padding(
+                padding: EdgeInsets.all(3),
+                child: Icon(Icons.play_arrow_rounded, size: 18)),
           ]),
           if (theme.widgetProgress)
             LinearProgressIndicator(

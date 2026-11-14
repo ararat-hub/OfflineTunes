@@ -2,7 +2,6 @@ import '../core/localization.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../data/models/media_link.dart';
 import '../data/models/playback_track.dart';
 import '../data/services/audio_player_service.dart';
@@ -37,19 +36,12 @@ class _OpenLinkCardState extends State<OpenLinkCard> {
       final youtube = context.read<YoutubePlayerService>();
       final fromLink = context.tr('По ссылке');
       if (download && !link.isDownloadableAudio) {
-        throw const FormatException(
-            'Для загрузки нужна прямая HTTPS-ссылка на аудиофайл.');
+        throw FormatException(link.isYoutube
+            ? 'Ссылку YouTube можно воспроизвести здесь. Для офлайн-загрузки нужен аудиофайл.'
+            : 'Для загрузки нужна прямая HTTPS-ссылка на аудиофайл.');
       }
       if (link.isYoutube) {
-        if (Platform.isAndroid) {
-          await audio.pause();
-          if (!await launchUrl(link.uri,
-              mode: LaunchMode.externalApplication)) {
-            throw StateError('Could not open YouTube');
-          }
-        } else {
-          await youtube.open(link);
-        }
+        await youtube.open(link);
       } else {
         final path = link.uri.toString();
         final track = PlaybackTrack(

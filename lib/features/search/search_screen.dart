@@ -7,8 +7,10 @@ import '../../core/localization.dart';
 import '../../widgets/track_row.dart';
 import '../../data/db/app_database.dart';
 import '../../data/models/playback_track.dart';
+import '../../data/models/music_query.dart';
 import '../../data/services/music_catalog.dart';
 import '../../data/services/favorite_tracks.dart';
+import '../../data/services/offline_tracks.dart';
 
 enum _Scope { all, library, favorites }
 
@@ -73,14 +75,21 @@ class _SearchScreenState extends State<SearchScreen> {
     });
     if (query.isEmpty || _scope == _Scope.favorites) return;
 
+    final offline = context.read<OfflineTracks?>();
     Future<void> loadLocal() async {
       try {
         final items = await widget.db.searchTracks(query);
+        await offline?.ready;
         if (!mounted || generation != _generation) return;
-        setState(() => _local = items
-            .map(PlaybackTrack.fromTrack)
-            .where((track) => track.path.isNotEmpty)
-            .toList());
+        final search = MusicQuery(query);
+        final results = <String, PlaybackTrack>{
+          for (final track in items.map(PlaybackTrack.fromTrack))
+            if (track.path.isNotEmpty) track.identity: track,
+          for (final track in offline?.tracks ?? const <PlaybackTrack>[])
+            if (search.matches(track.title, track.artist))
+              track.identity: track,
+        };
+        setState(() => _local = results.values.toList());
       } catch (error) {
         debugPrint('Library search: $error');
       }
@@ -134,11 +143,11 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final words = _submitted.toLowerCase().split(RegExp(r'\s+'));
+    final search = MusicQuery(_submitted);
     final favoriteMatches = _scope == _Scope.favorites
         ? context.watch<FavoriteTracks>().tracks.where((track) {
-            final text = '${track.title} ${track.artist}'.toLowerCase();
-            return words.every(text.contains);
+            return _submitted.isEmpty ||
+                search.matches(track.title, track.artist);
           }).toList()
         : const <PlaybackTrack>[];
     final emptyOnline = _online.values.every((items) => items.isEmpty);

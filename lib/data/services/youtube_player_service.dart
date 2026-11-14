@@ -1,20 +1,24 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_windows/webview_windows.dart';
+import 'package:webview_flutter/webview_flutter.dart' as mobile;
 import '../models/media_link.dart';
 import '../models/playback_track.dart';
 import 'audio_player_service.dart';
 
 class YoutubePlayerService extends ChangeNotifier {
   static const appId = 'io.github.ararat-hub.offlinetunes';
+  static const _androidAppId = 'com.example.offlinetunes';
   static Future<void>? _environment;
   final AudioPlayerService audio;
   final ValueChanged<PlaybackTrack>? onListened;
   WebviewController? controller;
+  mobile.WebViewController? androidController;
   Future<void>? _initializing;
   StreamSubscription<dynamic>? _messages;
   StreamSubscription<LoadingState>? _navigation;
@@ -31,7 +35,8 @@ class YoutubePlayerService extends ChangeNotifier {
   String? error;
   String title = 'YouTube';
   MediaLink? link;
-  bool get initialized => controller?.value.isInitialized ?? false;
+  bool get initialized =>
+      androidController != null || (controller?.value.isInitialized ?? false);
 
   YoutubePlayerService(this.audio, {this.onListened}) {
     audio.addListener(_audioChanged);
@@ -62,11 +67,20 @@ class YoutubePlayerService extends ChangeNotifier {
       await audio.pause();
       await (_initializing ??= _initialize());
       if (_disposed || generation != _generation) return;
-      await controller!.loadUrl(Uri.https(appId, '/player.html', {
+      final url = Uri.https(appId, '/player.html', {
         'video': media.youtubeId!,
         'start': '${media.startSeconds}',
         'request': '$generation',
-      }).toString());
+      });
+      final android = androidController;
+      if (android != null) {
+        final parameters = jsonEncode(url.query);
+        await android.loadHtmlString(
+            playerHtml.replaceFirst('location.search', parameters),
+            baseUrl: 'https://$_androidAppId/player.html');
+      } else {
+        await controller!.loadUrl(url.toString());
+      }
       _timeout?.cancel();
       _timeout = Timer(const Duration(seconds: 25), () {
         if (_disposed || generation != _generation || !loading) return;
@@ -90,6 +104,31 @@ class YoutubePlayerService extends ChangeNotifier {
   }
 
   Future<void> _initialize() async {
+    if (Platform.isAndroid) {
+      final web = mobile.WebViewController();
+      await web.setJavaScriptMode(mobile.JavaScriptMode.unrestricted);
+      await web.setBackgroundColor(Colors.black);
+      await web.addJavaScriptChannel('OTunePlayer', onMessageReceived: (event) {
+        try {
+          _message(jsonDecode(event.message));
+        } on FormatException {
+          return;
+        }
+      });
+      await web.setNavigationDelegate(mobile.NavigationDelegate(
+        onNavigationRequest: (request) {
+          if (!request.isMainFrame) return mobile.NavigationDecision.navigate;
+          final uri = Uri.tryParse(request.url);
+          if (request.url == 'about:blank' ||
+              (uri?.scheme == 'https' && uri?.host == _androidAppId)) {
+            return mobile.NavigationDecision.navigate;
+          }
+          return mobile.NavigationDecision.prevent;
+        },
+      ));
+      if (!_disposed) androidController = web;
+      return;
+    }
     if (!Platform.isWindows) {
       throw UnsupportedError(
           'Встроенный YouTube пока доступен в Windows-версии');
@@ -190,7 +229,7 @@ class YoutubePlayerService extends ChangeNotifier {
         final code = value['code'] is int ? value['code'] as int : 0;
         debugPrint('YouTube embed error: $code');
         _timeout?.cancel();
-        if (requiresWatchPage(code)) {
+        if (requiresWatchPage(code) && Platform.isWindows) {
           unawaited(openWatchPage());
           return;
         }
@@ -216,7 +255,13 @@ class YoutubePlayerService extends ChangeNotifier {
 
   Future<void> openWatchPage() async {
     final url = link?.canonicalYoutubeUrl;
-    if (!active || !initialized || url == null || watchPage) return;
+    if (!Platform.isWindows ||
+        !active ||
+        !initialized ||
+        url == null ||
+        watchPage) {
+      return;
+    }
     final generation = ++_generation;
     _starting = false;
     _timeout?.cancel();
@@ -238,7 +283,7 @@ class YoutubePlayerService extends ChangeNotifier {
 
   Future<void> toggleEmbeddedPlayback() async {
     if (!active || !initialized || watchPage) return;
-    await controller!.executeScript(
+    await _execute(
         'if(window.player?.getPlayerState?.() === 1) window.player.pauseVideo(); '
         'else window.player?.playVideo?.();');
   }
@@ -253,7 +298,12 @@ class YoutubePlayerService extends ChangeNotifier {
     _notify();
     if (initialized) {
       try {
-        await controller!.loadUrl('about:blank');
+        final android = androidController;
+        if (android != null) {
+          await android.loadRequest(Uri.parse('about:blank'));
+        } else {
+          await controller!.loadUrl('about:blank');
+        }
       } catch (e) {
         debugPrint('YouTube pause: $e');
       }
@@ -272,12 +322,20 @@ class YoutubePlayerService extends ChangeNotifier {
   Future<void> pauseForVisibility() async {
     if (!active || !initialized || watchPage) return;
     try {
-      await controller!
-          .executeScript('if(window.player) window.player.pauseVideo();');
+      await _execute('if(window.player) window.player.pauseVideo();');
       playing = false;
       _notify();
     } catch (e) {
       debugPrint('YouTube visibility: $e');
+    }
+  }
+
+  Future<void> _execute(String script) async {
+    final android = androidController;
+    if (android != null) {
+      await android.runJavaScript(script);
+    } else {
+      await controller!.executeScript(script);
     }
   }
 
@@ -290,7 +348,8 @@ class YoutubePlayerService extends ChangeNotifier {
     unawaited(_messages?.cancel());
     unawaited(_navigation?.cancel());
     unawaited(_loadErrors?.cancel());
-    if (initialized) unawaited(controller!.dispose());
+    final web = controller;
+    if (web?.value.isInitialized == true) unawaited(web!.dispose());
     super.dispose();
   }
 
@@ -304,7 +363,11 @@ const params = new URLSearchParams(location.search);
 const video = params.get('video') || '';
 const request = params.get('request') || '';
 const start = Math.max(0, Math.min(604800, parseInt(params.get('start') || '0', 10) || 0));
-function emit(data){ if(window.chrome && window.chrome.webview) window.chrome.webview.postMessage(Object.assign({video:video,request:request},data)); }
+function emit(data){
+  const message=Object.assign({video:video,request:request},data);
+  if(window.chrome && window.chrome.webview) window.chrome.webview.postMessage(message);
+  else if(window.OTunePlayer) window.OTunePlayer.postMessage(JSON.stringify(message));
+}
 window.onYouTubeIframeAPIReady = function(){
   if(!/^[A-Za-z0-9_-]{11}$/.test(video)){ emit({type:'error',code:2}); return; }
   window.player = new YT.Player('player', {

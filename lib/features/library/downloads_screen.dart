@@ -11,6 +11,12 @@ class DownloadsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final downloads = context.watch<OfflineTracks>();
+    if (downloads.restoring) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (downloads.storageUnavailable) {
+      return Center(child: Text(context.tr('Не удалось открыть загрузки.')));
+    }
     final tracks = downloads.tracks;
     if (tracks.isEmpty) {
       return Center(
