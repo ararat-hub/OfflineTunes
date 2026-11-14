@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:video_player/video_player.dart';
 import 'package:window_manager/window_manager.dart';
 import '../theme/theme_provider.dart';
 
@@ -33,6 +34,8 @@ class _AppBackdropState extends State<AppBackdrop>
   Timer? _ambientTimer;
   Player? _player;
   VideoController? _video;
+  VideoPlayerController? _androidVideo;
+  bool _seekingAndroidLoop = false;
   StreamSubscription<String>? _errors;
   StreamSubscription<Duration>? _durations;
   String? _error;
@@ -89,6 +92,10 @@ class _AppBackdropState extends State<AppBackdrop>
       try {
         if (path == null) {
           await _releaseVideo();
+          return;
+        }
+        if (Platform.isAndroid) {
+          await _syncAndroidVideo(path, loop!, visible);
           return;
         }
         if (_path != path || _loadedLoop != loop) {
@@ -151,8 +158,77 @@ class _AppBackdropState extends State<AppBackdrop>
     });
   }
 
+  Future<void> _syncAndroidVideo(
+      String path, VideoLoop loop, bool visible) async {
+    const assetPrefix = 'asset:///';
+    final options = VideoPlayerOptions(
+        mixWithOthers: true,
+        allowBackgroundPlayback: true,
+        preventsDisplaySleepDuringVideoPlayback: false);
+    if (_path != path) {
+      await _releaseVideo();
+      if (!mounted || _requestedVideo.$1 != path) return;
+      final controller = path.startsWith(assetPrefix)
+          ? VideoPlayerController.asset(path.substring(assetPrefix.length),
+              videoPlayerOptions: options)
+          : VideoPlayerController.file(File(path), videoPlayerOptions: options);
+      _androidVideo = controller;
+      await controller.initialize();
+      await controller.setVolume(0);
+      controller.addListener(_checkAndroidLoop);
+      _path = path;
+      if (!mounted || _requestedVideo.$1 != path) return;
+      setState(() => _error = null);
+      widget.theme.noteBackgroundDuration(path, controller.value.duration);
+    }
+    if (!mounted || _requestedVideo != (path, visible, loop)) return;
+    final controller = _androidVideo!;
+    if (_loadedLoop != loop) {
+      _loadedLoop = loop;
+      await controller.setLooping(loop.from == 0 && loop.to == null);
+      await controller.seekTo(Duration(seconds: loop.from));
+    }
+    if (visible) {
+      await controller.play();
+    } else {
+      await controller.pause();
+    }
+  }
+
+  void _checkAndroidLoop() {
+    final controller = _androidVideo;
+    final loop = _loadedLoop;
+    if (controller == null ||
+        loop == null ||
+        !_requestedVideo.$2 ||
+        _seekingAndroidLoop ||
+        (loop.from == 0 && loop.to == null)) {
+      return;
+    }
+    final value = controller.value;
+    final end = loop.to == null ? value.duration : Duration(seconds: loop.to!);
+    if (!value.isCompleted && value.position < end) return;
+    _seekingAndroidLoop = true;
+    unawaited(_repeatAndroidVideo(controller, Duration(seconds: loop.from)));
+  }
+
+  Future<void> _repeatAndroidVideo(
+      VideoPlayerController controller, Duration start) async {
+    try {
+      await controller.seekTo(start);
+      if (mounted && _androidVideo == controller && _requestedVideo.$2) {
+        await controller.play();
+      }
+    } catch (error) {
+      debugPrint('Loop video background: $error');
+    } finally {
+      _seekingAndroidLoop = false;
+    }
+  }
+
   Future<void> _releaseVideo() async {
     final player = _player;
+    final androidVideo = _androidVideo;
     final errors = _errors;
     final durations = _durations;
     _player = null;
@@ -161,9 +237,12 @@ class _AppBackdropState extends State<AppBackdrop>
     _path = null;
     _loadedLoop = null;
     _video = null;
+    _androidVideo = null;
     _error = null;
-    if (mounted && player != null) setState(() {});
+    if (mounted && (player != null || androidVideo != null)) setState(() {});
     try {
+      androidVideo?.removeListener(_checkAndroidLoop);
+      await androidVideo?.dispose();
       await errors?.cancel();
       await durations?.cancel();
       await player?.dispose();
@@ -226,7 +305,18 @@ class _AppBackdropState extends State<AppBackdrop>
                   child: Text(context.tr(
                       'Фоновое изображение недоступно. Выберите файл в оформлении.')))));
     }
+    final androidVideo = _androidVideo;
     if (backgroundType == BackgroundType.video &&
+        _error == null &&
+        androidVideo != null &&
+        androidVideo.value.isInitialized) {
+      final size = androidVideo.value.size;
+      background = FittedBox(
+        fit: fit,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox.fromSize(size: size, child: VideoPlayer(androidVideo)),
+      );
+    } else if (backgroundType == BackgroundType.video &&
         _video != null &&
         _error == null) {
       background = Video(
