@@ -1,7 +1,7 @@
 name: offlinetunes
 description: oTune offline-first music player
 publish_to: 'none'
-version: 1.5.2+8
+version: 1.5.3+9
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -60,4 +60,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/backgrounds/
+    - assets/catalog/
     - assets/images/

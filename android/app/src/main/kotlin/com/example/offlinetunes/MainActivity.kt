@@ -37,10 +37,11 @@ class MainActivity : AudioServiceActivity() {
             messenger, "otune/background_thumbnail", StandardMethodCodec.INSTANCE,
             messenger.makeBackgroundTaskQueue()
         ).setMethodCallHandler { call, result ->
-            if (call.method != "frame") {
-                result.notImplemented()
-            } else {
-                result.success((call.arguments as? String)?.let(::videoFrame))
+            val path = call.arguments as? String
+            when (call.method) {
+                "frame" -> result.success(path?.let(::videoFrame))
+                "embeddedArt" -> result.success(path?.let(::embeddedArt))
+                else -> result.notImplemented()
             }
         }
     }
@@ -76,26 +77,29 @@ class MainActivity : AudioServiceActivity() {
         super.cleanUpFlutterEngine(engine)
     }
 
-    private fun videoFrame(path: String): ByteArray? {
+    private fun embeddedArt(path: String): ByteArray? =
+        readMetadata(path) { media -> media.embeddedPicture?.takeIf { it.size <= 8 * 1024 * 1024 } }
+
+    private fun videoFrame(path: String): ByteArray? = readMetadata(path) { media ->
+        val option = MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            media.getScaledFrameAtTime(-1, option, 256, 144)
+        } else {
+            media.getFrameAtTime(-1, option)
+        } ?: return@readMetadata null
+        try {
+            val bytes = ByteArrayOutputStream()
+            if (frame.compress(Bitmap.CompressFormat.JPEG, 78, bytes)) bytes.toByteArray() else null
+        } finally {
+            frame.recycle()
+        }
+    }
+
+    private fun readMetadata(path: String, read: (MediaMetadataRetriever) -> ByteArray?): ByteArray? {
         val media = MediaMetadataRetriever()
         return try {
             media.setDataSource(path)
-            val option = MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-            val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                media.getScaledFrameAtTime(-1, option, 256, 144)
-            } else {
-                media.getFrameAtTime(-1, option)
-            } ?: return null
-            try {
-                val bytes = ByteArrayOutputStream()
-                if (frame.compress(Bitmap.CompressFormat.JPEG, 78, bytes)) {
-                    bytes.toByteArray()
-                } else {
-                    null
-                }
-            } finally {
-                frame.recycle()
-            }
+            read(media)
         } catch (_: Exception) {
             null
         } finally {

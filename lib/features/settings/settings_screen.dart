@@ -146,25 +146,100 @@ class _TimeZonePickerState extends State<_TimeZonePicker> {
 class _LanguageSettings extends StatelessWidget {
   const _LanguageSettings();
 
+  static const _aliases = {
+    'ru': 'русский russian',
+    'en': 'английский english',
+    'es': 'испанский spanish espanol',
+    'de': 'немецкий german',
+    'fr': 'французский french francais',
+    'uk': 'украинский ukrainian',
+    'pl': 'польский polish',
+    'pt': 'португальский portuguese portugues',
+    'it': 'итальянский italian',
+    'tr': 'турецкий turkish turkce',
+  };
+
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<AppPreferences>();
-    return Wrap(
-      spacing: 10,
-      runSpacing: 8,
-      children: [
-        for (final language in AppPreferences.languages.entries)
-          ChoiceChip(
-            label: Text(language.value),
-            selected: language.key == settings.locale.languageCode,
-            onSelected: (_) async {
-              try {
-                await settings.setLanguage(language.key);
-              } catch (_) {
-                if (context.mounted) _settingsError(context);
-              }
-            },
-          ),
+    final selected = settings.locale.languageCode;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.language_rounded),
+      title: Text(context.tr('Язык интерфейса')),
+      subtitle: Text(AppPreferences.languages[selected]!),
+      trailing: const Icon(Icons.keyboard_arrow_right_rounded),
+      onTap: () async {
+        final value = await showDialog<String>(
+            context: context,
+            builder: (_) => _LanguagePicker(selected: selected));
+        if (value == null || !context.mounted) return;
+        try {
+          await settings.setLanguage(value);
+        } catch (_) {
+          if (context.mounted) _settingsError(context);
+        }
+      },
+    );
+  }
+}
+
+class _LanguagePicker extends StatefulWidget {
+  const _LanguagePicker({required this.selected});
+  final String selected;
+
+  @override
+  State<_LanguagePicker> createState() => _LanguagePickerState();
+}
+
+class _LanguagePickerState extends State<_LanguagePicker> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = AppPreferences.languages.entries
+        .where((language) =>
+            '${language.value} ${language.key} ${_LanguageSettings._aliases[language.key]}'
+                .toLowerCase()
+                .contains(_query))
+        .toList();
+    return AlertDialog(
+      title: Text(context.tr('Язык интерфейса')),
+      content: SizedBox(
+          width: 420,
+          height: 330,
+          child: Column(children: [
+            TextField(
+                onChanged: (value) =>
+                    setState(() => _query = value.trim().toLowerCase()),
+                decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    hintText: context.tr('Найти язык'))),
+            const SizedBox(height: 8),
+            Expanded(
+                child: matches.isEmpty
+                    ? Center(child: Text(context.tr('Ничего не найдено')))
+                    : ListView.builder(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemCount: matches.length,
+                        itemBuilder: (_, index) {
+                          final language = matches[index];
+                          final selected = language.key == widget.selected;
+                          return ListTile(
+                              title: Text(language.value),
+                              selected: selected,
+                              trailing: selected
+                                  ? const Icon(Icons.check_rounded)
+                                  : null,
+                              onTap: () =>
+                                  Navigator.pop(context, language.key));
+                        })),
+          ])),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(context.tr('Отмена')))
       ],
     );
   }

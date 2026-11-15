@@ -64,7 +64,7 @@ void main() {
     final page = await catalog.search('Beethoven');
     expect(page.nextOffset, 30);
     final entry = page.tracks.single;
-    expect(entry.duration.inSeconds, 436);
+    expect(entry.duration, const Duration(milliseconds: 436020));
     expect(entry.track.path,
         'https://upload.wikimedia.org/wikipedia/commons/a/b/Symphony.ogg');
     expect(entry.track.artist, 'Beethoven');
@@ -136,7 +136,7 @@ void main() {
         'https://api.audius.co/v1/tracks/ng9rl/stream?app_name=OfflineTunes');
     expect(
         track.track.sourcePage, 'https://audius.co/bsdu/lofi-type-beat-14815');
-    expect(track.duration.inSeconds, 334);
+    expect(track.duration, const Duration(seconds: 334));
   });
 
   test('popular tracks are ordered by Audius play count', () async {
@@ -190,7 +190,11 @@ void main() {
           200);
     }));
     final live = await catalog.popularWithCache();
-    expect(attempts, ['api.audius.co', 'discoveryprovider.audius.co']);
+    expect(attempts, [
+      'api.audius.co',
+      'discoveryprovider.audius.co',
+      'discoveryprovider2.audius.co'
+    ]);
     expect(live.cached, isFalse);
     expect(live.tracks.single.track.artworkAlternatives,
         ['https://two.example/content/cover/150x150.jpg']);
@@ -199,6 +203,149 @@ void main() {
     expect(cached.cached, isTrue);
     expect(
         cached.tracks.single.track.toJson(), live.tracks.single.track.toJson());
+  });
+
+  test('Russian catalog search prioritizes the artist and keeps previews out',
+      () async {
+    Map<String, Object> entry(int id, String title, String artist, int rank) =>
+        {
+          'id': id,
+          'title': title,
+          'duration': 207,
+          'artist': {'name': artist},
+          'rank': rank,
+          'preview': 'https://example.com/preview.mp3',
+          'album': {
+            'cover_medium': 'https://cdn-images.dzcdn.net/images/cover/c.jpg'
+          },
+        };
+    final catalog = MusicCatalog(MockClient((request) async {
+      if (request.url.host == 'itunes.apple.com') return http.Response('', 503);
+      expect(request.url.host, 'api.deezer.com');
+      expect(request.url.queryParameters['order'], 'RANKING');
+      return http.Response.bytes(
+          utf8.encode(jsonEncode({
+            'data': [
+              entry(12, 'Первый сингл', 'Пётр Тестов', 8000),
+              entry(4, 'Второй сингл', 'Пётр Тестов', 9000),
+              entry(3, 'Пётр Тестов', 'Другой артист', 9999),
+              entry(7, 'Совсем другая песня', 'Другой артист', 9900),
+            ]
+          })),
+          200);
+    }));
+    final page =
+        await catalog.search('Пётр Тестов', source: CatalogSource.recordings);
+    expect(page.tracks.map((entry) => entry.track.title),
+        ['Второй сингл', 'Первый сингл', 'Пётр Тестов']);
+    final first = page.tracks.first.track;
+    expect(first.externalProvider, 'Deezer');
+    expect(first.path, 'https://www.deezer.com/track/4');
+    expect(first.downloadUrl, isNull);
+    expect(first.artworkAlternatives.single,
+        'https://cdn-images.deezer.com/images/cover/c.jpg');
+  });
+
+  test('bundled Russian catalog returns exact records during a DNS outage',
+      () async {
+    final catalog =
+        MusicCatalog(MockClient((_) async => http.Response('', 503)));
+    final search = await catalog.searchRecordings('Виктор Цой');
+    expect(search.ranked, isFalse);
+    final track = search.page.tracks
+        .firstWhere((item) => item.track.title == 'Звезда по имени Солнце')
+        .track;
+    expect(track.artist, 'Кино');
+    expect(track.artwork, startsWith('https://is1-ssl.mzstatic.com/'));
+    expect(track.path, startsWith('https://music.apple.com/ru/'));
+  });
+
+  test(
+      'Russian catalog matches the same Kino recording from an independent source',
+      () async {
+    final requests = <String>[];
+    final catalog = MusicCatalog(MockClient((request) async {
+      requests.add(request.url.host);
+      if (request.url.host == 'itunes.apple.com') {
+        return http.Response.bytes(
+            utf8.encode(jsonEncode({
+              'results': [
+                {
+                  'trackName': 'Группа крови',
+                  'artistName': 'Кино',
+                  'trackTimeMillis': 278500,
+                  'artworkUrl100': 'https://is1-ssl.mzstatic.com/album.jpg',
+                  'trackViewUrl': 'https://music.apple.com/ru/album/1?i=2'
+                },
+              ]
+            })),
+            200);
+      }
+      return http.Response.bytes(
+          utf8.encode(jsonEncode({
+            'data': [
+              {
+                'id': 22,
+                'title': 'Группа крови',
+                'artist': {'name': 'Виктор Цой'},
+                'duration': 275,
+                'rank': 5000
+              },
+            ]
+          })),
+          200);
+    }));
+    final search = await catalog.searchRecordings('Виктор Цой');
+    expect(requests, containsAll(['api.deezer.com', 'itunes.apple.com']));
+    expect(search.ranked, isTrue);
+    expect(search.page.tracks.single.rank, 5000);
+    expect(search.page.tracks.single.track.externalProvider, 'Apple Music');
+    expect(search.page.tracks.single.track.artwork,
+        'https://is1-ssl.mzstatic.com/album.jpg');
+  });
+
+  test('regional chart preserves the official order and uses storefront links',
+      () async {
+    final catalog = MusicCatalog(MockClient((request) async {
+      expect(request.url.path, '/api/v2/ru/music/most-played/25/songs.json');
+      return http.Response.bytes(
+          utf8.encode(jsonEncode({
+            'feed': {
+              'results': [
+                {
+                  'name': 'Первый',
+                  'artistName': 'Исполнитель',
+                  'url': 'https://music.apple.com/ru/album/111?i=222'
+                },
+                {
+                  'name': 'Второй',
+                  'artistName': 'Другой',
+                  'url': 'https://music.apple.com/ru/album/333?i=444'
+                },
+              ]
+            }
+          })),
+          200);
+    }));
+    final result = await catalog.popularWithCache(region: ChartRegion.russia);
+    expect(result.source, 'Apple Music');
+    expect(
+        result.tracks.map((entry) => entry.track.title), ['Первый', 'Второй']);
+    expect(result.tracks.first.track.externalProvider, 'Apple Music');
+    expect(result.tracks.first.plays, isNull);
+  });
+
+  test('a first install has a playable global chart if the catalog is offline',
+      () async {
+    final catalog =
+        MusicCatalog(MockClient((_) async => http.Response('', 503)));
+    final fallback = await catalog.popularWithCache(genre: 'Rock');
+    expect(fallback.cached, isTrue);
+    expect(fallback.tracks, isNotEmpty);
+    expect(
+        fallback.tracks.every((item) =>
+            item.track.genre == 'Rock' && item.track.externalProvider == null),
+        isTrue);
   });
 
   test(

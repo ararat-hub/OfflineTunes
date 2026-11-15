@@ -1,15 +1,22 @@
 import 'package:flutter/widgets.dart';
+import 'localization_additional.dart';
 import 'localization_de_fr.dart';
 
 extension OfflineTunesLocalization on BuildContext {
   String tr(String source, [Map<String, Object> arguments = const {}]) {
     final translation = _translations[source];
+    final additional = additionalLanguages[source];
     final language = Localizations.localeOf(this).languageCode;
     final message = switch (language) {
       'en' => translation?.$1 ?? source,
       'es' => translation?.$2 ?? source,
       'de' => germanFrench[source]?.$1 ?? translation?.$1 ?? source,
       'fr' => germanFrench[source]?.$2 ?? translation?.$1 ?? source,
+      'uk' => additional?.$1 ?? translation?.$1 ?? source,
+      'pl' => additional?.$2 ?? translation?.$1 ?? source,
+      'pt' => additional?.$3 ?? translation?.$1 ?? source,
+      'it' => additional?.$4 ?? translation?.$1 ?? source,
+      'tr' => additional?.$5 ?? translation?.$1 ?? source,
       _ => source,
     };
     if (arguments.isEmpty) return message;
@@ -22,6 +29,32 @@ extension OfflineTunesLocalization on BuildContext {
 final _placeholder = RegExp(r'\{(\w+)\}');
 
 const _translations = <String, (String, String)>{
+  'Язык интерфейса': ('Interface language', 'Idioma de la interfaz'),
+  'Найти язык': ('Find a language', 'Buscar idioma'),
+  'Записи из музыкальных каталогов': (
+    'From music catalogs',
+    'De catálogos musicales'
+  ),
+  'Доступно в oTune': ('Available in oTune', 'Disponible en oTune'),
+  'Открыть в {provider}': ('Open in {provider}', 'Abrir en {provider}'),
+  'Мир': ('Global', 'Global'),
+  'Россия': ('Russia', 'Rusia'),
+  'Топ треков в России': ('Top tracks in Russia', 'Top canciones en Rusia'),
+  'Популярные совпадения': ('Popular matches', 'Resultados populares'),
+  'Найденные треки': ('Matching tracks', 'Canciones encontradas'),
+  'Подборка · Apple Music': (
+    'Results · Apple Music',
+    'Resultados · Apple Music'
+  ),
+  'По популярности · Deezer': (
+    'By popularity · Deezer',
+    'Por popularidad · Deezer'
+  ),
+  'Чарт · Apple Music': ('Chart · Apple Music', 'Lista · Apple Music'),
+  'Сохранённая подборка · {provider}': (
+    'Saved chart · {provider}',
+    'Lista guardada · {provider}'
+  ),
   'Скачать обновление': ('Download update', 'Descargar actualización'),
   'Сохранённые фоны виджета': (
     'Saved widget backgrounds',
@@ -221,7 +254,10 @@ const _translations = <String, (String, String)>{
   'Проверить обновления': ('Check for updates', 'Buscar actualizaciones'),
   'Главная': ('Home', 'Inicio'),
   'Поиск': ('Search', 'Buscar'),
-  'Найти в чарте': ('Search this chart', 'Buscar en la lista'),
+  'Найти в чарте': (
+    'Search for an artist or track',
+    'Buscar artista o canción'
+  ),
   'Очистить поиск': ('Clear search', 'Borrar búsqueda'),
   'Все жанры': ('All genres', 'Todos los géneros'),
   'Электроника': ('Electronic', 'Electrónica'),

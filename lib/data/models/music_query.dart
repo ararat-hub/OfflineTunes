@@ -49,6 +49,18 @@ class MusicQuery {
     'баста': 'basta',
     'монеточка': 'monetochka',
     'би 2': 'bi 2',
+    'ленинград': 'leningrad',
+    'агата кристи': 'agata kristi',
+    'алиса': 'alisa',
+    'король и шут': 'korol i shut',
+    'руки вверх': 'ruki vverh',
+    'сектор газа': 'sektor gaza',
+    'гражданская оборона': 'grazhdanskaya oborona',
+    'люмен': 'lumen',
+    'макsим': 'maksim',
+    'любе': 'lyube',
+    'мияги': 'miyagi',
+    'шаман': 'shaman',
   };
 
   static String normalize(String value) => value
@@ -75,17 +87,42 @@ class MusicQuery {
   List<String> get variants {
     final normal = _normalized;
     if (normal.isEmpty) return const [];
+    final spellings = <String>{text};
     for (final entry in _artistNames.entries) {
       if (_beginsWith(normal, entry.key)) {
-        return [text, entry.value + _latin(normal.substring(entry.key.length))];
+        spellings.add(entry.value + _latin(normal.substring(entry.key.length)));
       }
       if (_beginsWith(normal, entry.value)) {
-        return [text, entry.key + normal.substring(entry.value.length)];
+        spellings.add(entry.key + normal.substring(entry.value.length));
       }
     }
-    if (!_cyrillic.hasMatch(normal) || normal.length < 3) return [text];
-    return {text, _latin(normal), if (text.toLowerCase().contains('ё')) normal}
-        .toList();
+    for (final name in ['виктор цой', 'viktor tsoi', 'viktor tsoy']) {
+      if (_beginsWith(normal, name)) {
+        spellings.add('Кино${normal.substring(name.length)}');
+      }
+    }
+    if (_cyrillic.hasMatch(normal) && normal.length >= 3) {
+      spellings.add(_latin(normal));
+      if (text.toLowerCase().contains('ё')) spellings.add(normal);
+    }
+    return spellings.toList();
+  }
+
+  String? get cyrillicVariant =>
+      variants.where((variant) => _cyrillic.hasMatch(variant)).firstOrNull;
+
+  static String recordingArtist(String artist) {
+    final normalized = normalize(artist);
+    if (const {
+      'кино',
+      'виктор цой',
+      'viktor tsoi',
+      'viktor tsoy',
+      'кино и виктор цой'
+    }.contains(normalized)) {
+      return 'кино';
+    }
+    return _latin(normalized);
   }
 
   late final _terms = variants
@@ -103,7 +140,7 @@ class MusicQuery {
     final words = '$titleKey $artistKey'.split(' ');
     var best = 0;
     for (final term in _terms) {
-      if (!term.every((part) => words.any((word) => word.contains(part)))) {
+      if (!term.every((part) => words.any((word) => word.startsWith(part)))) {
         continue;
       }
       final whole = term.join(' ');

@@ -35,7 +35,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   label: Text(context.tr(label)),
                   selected: _section == index,
                   onSelected: (_) => setState(() => _section = index)),
-            if (_section < 2)
+            if (!Platform.isAndroid && _section < 2)
               DropdownButton<bool>(
                   value: _byTitle,
                   items: [

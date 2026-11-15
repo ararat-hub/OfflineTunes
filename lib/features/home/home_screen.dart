@@ -16,6 +16,7 @@ import '../../data/services/youtube_player_service.dart';
 import '../../theme/theme_provider.dart';
 import '../../widgets/app_backdrop.dart';
 import '../../widgets/appearance_editor.dart' show ProfileAvatar;
+import '../../widgets/mobile_icon_button.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/player_controls.dart';
 import '../../widgets/player_clock.dart';
@@ -272,15 +273,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               style: Theme.of(context).textTheme.titleLarge,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis)),
-                      IconButton(
-                          tooltip: context.tr('Добавить музыку'),
+                      MobileIconButton(
+                          label: context.tr('Добавить музыку'),
                           onPressed: () {
                             if (youtube.active) unawaited(youtube.close());
                             _navigate(4);
                           },
                           icon: const Icon(Icons.add_rounded)),
-                      IconButton(
-                          tooltip: context.tr('Мой профиль'),
+                      MobileIconButton(
+                          label: context.tr('Мой профиль'),
                           onPressed: () {
                             if (youtube.active) unawaited(youtube.close());
                             _navigate(6);
@@ -299,6 +300,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 NavigationBar(
                   height: 62,
                   backgroundColor: Colors.black.withValues(alpha: .68),
+                  indicatorColor:
+                      Theme.of(context).colorScheme.primaryContainer,
+                  indicatorShape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  animationDuration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 210),
                   selectedIndex: [0, 1, 2, 7].contains(_selectedIndex)
                       ? [0, 1, 2, 7].indexOf(_selectedIndex)
                       : 2,
@@ -310,8 +318,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     for (final item in _navigation
                         .where((item) => [0, 1, 2, 7].contains(item.$1)))
                       NavigationDestination(
-                          icon: Icon(item.$2),
-                          selectedIcon: Icon(item.$3),
+                          icon: Icon(
+                              switch (item.$1) {
+                                0 => Icons.grid_view_rounded,
+                                1 => Icons.search_rounded,
+                                2 => Icons.library_music_outlined,
+                                _ => Icons.explore_outlined,
+                              },
+                              size: 22),
+                          selectedIcon: Icon(
+                              switch (item.$1) {
+                                0 => Icons.dashboard_rounded,
+                                1 => Icons.manage_search_rounded,
+                                2 => Icons.library_music_rounded,
+                                _ => Icons.explore_rounded,
+                              },
+                              size: 23),
                           label: context.tr(item.$4)),
                   ],
                 ),
@@ -570,12 +592,20 @@ class _MobilePlayerBar extends StatelessWidget {
                   maxLines: 1, overflow: TextOverflow.ellipsis),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 FavoriteTrackButton(track: track),
-                IconButton(
-                    tooltip:
+                MobileIconButton(
+                    emphasized: true,
+                    label:
                         context.tr(audio.isPlaying ? 'Пауза' : 'Воспроизвести'),
-                    icon: Icon(audio.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded),
+                    icon: AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 150),
+                      child: Icon(
+                          audio.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey(audio.isPlaying)),
+                    ),
                     onPressed: audio.togglePlayPause),
               ]),
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(

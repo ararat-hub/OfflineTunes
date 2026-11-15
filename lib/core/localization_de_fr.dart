@@ -1,4 +1,33 @@
 const germanFrench = <String, (String, String)>{
+  'Язык интерфейса': ('Anzeigesprache', 'Langue de l’interface'),
+  'Найти язык': ('Sprache suchen', 'Rechercher une langue'),
+  'Записи из музыкальных каталогов': (
+    'Aus Musikkatalogen',
+    'Des catalogues musicaux'
+  ),
+  'Доступно в oTune': ('In oTune verfügbar', 'Disponible dans oTune'),
+  'Открыть в {provider}': ('In {provider} öffnen', 'Ouvrir dans {provider}'),
+  'Мир': ('Weltweit', 'Monde'),
+  'Россия': ('Russland', 'Russie'),
+  'Топ треков в России': (
+    'Top-Titel in Russland',
+    'Titres populaires en Russie'
+  ),
+  'Популярные совпадения': ('Beliebte Treffer', 'Résultats populaires'),
+  'Найденные треки': ('Passende Titel', 'Titres trouvés'),
+  'Подборка · Apple Music': (
+    'Ergebnisse · Apple Music',
+    'Résultats · Apple Music'
+  ),
+  'По популярности · Deezer': (
+    'Nach Beliebtheit · Deezer',
+    'Par popularité · Deezer'
+  ),
+  'Чарт · Apple Music': ('Charts · Apple Music', 'Classement · Apple Music'),
+  'Сохранённая подборка · {provider}': (
+    'Gespeicherte Charts · {provider}',
+    'Classement enregistré · {provider}'
+  ),
   'Полные треки · Audius': (
     'Vollständige Titel · Audius',
     'Pistes complètes · Audius'

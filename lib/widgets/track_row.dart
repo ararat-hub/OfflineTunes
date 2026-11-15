@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -15,10 +17,14 @@ import '../data/services/youtube_player_service.dart';
 
 void playHistoryTrack(
     BuildContext context, List<PlaybackTrack> tracks, PlaybackTrack selected) {
-  if (selected.youtube) {
+  if (selected.externalProvider != null) {
+    openTrackSource(context, selected);
+  } else if (selected.youtube) {
     context.read<YoutubePlayerService>().open(MediaLink.parse(selected.path));
   } else {
-    final originals = tracks.where((track) => !track.youtube).toList();
+    final originals = tracks
+        .where((track) => !track.youtube && track.externalProvider == null)
+        .toList();
     final saved = context.read<OfflineTracks?>();
     final audio = originals
         .map((track) => saved?.localOrOriginal(track) ?? track)
@@ -26,6 +32,19 @@ void playHistoryTrack(
     context
         .read<AudioPlayerService>()
         .playQueue(audio, index: originals.indexOf(selected));
+  }
+}
+
+Future<void> openTrackSource(BuildContext context, PlaybackTrack track) async {
+  final url = Uri.tryParse(track.sourcePage ?? '');
+  if (url != null &&
+      url.scheme == 'https' &&
+      await launchUrl(url, mode: LaunchMode.externalApplication)) {
+    return;
+  }
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('Не удалось открыть ссылку.'))));
   }
 }
 
@@ -55,6 +74,7 @@ class TrackRow extends StatelessWidget {
       if (time != null && rank == null)
         '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
       if (track.license != null) track.license!,
+      if (track.externalProvider != null) track.externalProvider!,
       if (playCount != null)
         context.tr('Прослушиваний: {count}', {
           'count': NumberFormat.decimalPattern(
@@ -86,30 +106,36 @@ class TrackRow extends StatelessWidget {
           : Text(metadata.join(' · '),
               maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: trailing ??
-          (rank == null
-              ? TrackActions(track: track, duration: duration)
-              : Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (time != null)
-                    Text(
-                        '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
-                        style: Theme.of(context).textTheme.labelMedium),
-                  if (!narrowChart) FavoriteTrackButton(track: track),
-                  IconButton(
-                    icon: const Icon(Icons.more_horiz),
-                    tooltip: context.tr('О треке'),
-                    onPressed: () => showModalBottomSheet<void>(
-                      context: context,
-                      builder: (sheet) => SafeArea(
-                          child: ListTile(
-                        leading: TrackArtwork(track: track),
-                        title: Text(track.title),
-                        subtitle: Text(track.artist),
-                        trailing:
-                            TrackActions(track: track, duration: duration),
-                      )),
-                    ),
-                  ),
-                ])),
+          (track.externalProvider != null
+              ? IconButton(
+                  tooltip: context.tr('Открыть в {provider}',
+                      {'provider': track.externalProvider!}),
+                  onPressed: onPlay,
+                  icon: const Icon(Icons.north_east_rounded, size: 19))
+              : rank == null
+                  ? TrackActions(track: track, duration: duration)
+                  : Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (time != null)
+                        Text(
+                            '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
+                            style: Theme.of(context).textTheme.labelMedium),
+                      if (!narrowChart) FavoriteTrackButton(track: track),
+                      IconButton(
+                        icon: const Icon(Icons.more_horiz),
+                        tooltip: context.tr('О треке'),
+                        onPressed: () => showModalBottomSheet<void>(
+                          context: context,
+                          builder: (sheet) => SafeArea(
+                              child: ListTile(
+                            leading: TrackArtwork(track: track),
+                            title: Text(track.title),
+                            subtitle: Text(track.artist),
+                            trailing:
+                                TrackActions(track: track, duration: duration),
+                          )),
+                        ),
+                      ),
+                    ])),
       onTap: onPlay,
     );
   }
@@ -143,13 +169,28 @@ class _TrackArtworkState extends State<TrackArtwork> {
   @override
   Widget build(BuildContext context) {
     final size = widget.size;
-    final fallback = ColoredBox(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+    final colors = Theme.of(context).colorScheme;
+    final fallback = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: Platform.isAndroid
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                    colors.primaryContainer,
+                    colors.surfaceContainerHighest
+                  ])
+            : null,
+        color: colors.surfaceContainerHighest,
+      ),
       child: Center(
           child: Icon(
               widget.track?.youtube == true
                   ? Icons.smart_display_outlined
-                  : Icons.music_note_rounded,
+                  : Platform.isAndroid
+                      ? Icons.graphic_eq_rounded
+                      : Icons.music_note_rounded,
+              color: colors.onPrimaryContainer,
               size: size * .48)),
     );
     return ClipRRect(
@@ -267,9 +308,8 @@ class TrackActions extends StatelessWidget {
                           if (track.license != null) Text(track.license!),
                           if (track.sourcePage != null)
                             TextButton.icon(
-                                onPressed: () => launchUrl(
-                                    Uri.parse(track.sourcePage!),
-                                    mode: LaunchMode.externalApplication),
+                                onPressed: () =>
+                                    openTrackSource(context, track),
                                 icon: const Icon(Icons.open_in_new),
                                 label: Text(context.tr('Источник записи'))),
                         ]),

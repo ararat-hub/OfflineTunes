@@ -63,6 +63,7 @@ class _SearchScreenState extends State<SearchScreen> {
               for (final source in CatalogSource.values) source: 0
           };
     final generation = ++_generation;
+    var remoteSuccesses = 0;
     setState(() {
       if (!append) {
         _local = [];
@@ -103,6 +104,7 @@ class _SearchScreenState extends State<SearchScreen> {
         final current = _online[source] ?? [];
         final known = current.map((item) => item.track.path).toSet();
         setState(() {
+          remoteSuccesses++;
           _online[source] = [
             ...current,
             ...result.tracks.where((item) => known.add(item.track.path)),
@@ -128,7 +130,10 @@ class _SearchScreenState extends State<SearchScreen> {
         loadRemote(request.key, request.value),
     ]);
     if (mounted && generation == _generation) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _catalogFailed = _catalogFailed && remoteSuccesses == 0;
+      });
     }
   }
 
@@ -209,10 +214,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
               ],
-              for (final source in CatalogSource.values)
-                if (_online[source]?.isNotEmpty == true)
-                  _onlineSection(context, _online[source]!),
-              if (_catalogFailed && emptyOnline)
+              if (_online[CatalogSource.recordings]?.isNotEmpty == true) ...[
+                _label(context.tr('Записи из музыкальных каталогов')),
+                _onlineSection(context, _online[CatalogSource.recordings]!),
+              ],
+              if (_online[CatalogSource.audius]?.isNotEmpty == true ||
+                  _online[CatalogSource.commons]?.isNotEmpty == true) ...[
+                _label(context.tr('Доступно в oTune')),
+                _onlineSection(context, [
+                  ...?_online[CatalogSource.audius],
+                  ...?_online[CatalogSource.commons],
+                ]),
+              ],
+              if (!_loading && _catalogFailed && emptyOnline)
                 SliverToBoxAdapter(
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,

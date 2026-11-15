@@ -7,6 +7,7 @@ class PlaybackTrack {
   final String artist;
   final String? genre;
   final String? sourcePage;
+  final String? externalProvider;
   final String? license;
   final String? artwork;
   final List<String> artworkAlternatives;
@@ -21,6 +22,7 @@ class PlaybackTrack {
       required this.artist,
       this.genre,
       this.sourcePage,
+      this.externalProvider,
       this.license,
       this.artwork,
       this.artworkAlternatives = const [],
@@ -54,6 +56,7 @@ class PlaybackTrack {
         'artist': artist,
         'genre': genre,
         'sourcePage': sourcePage,
+        if (externalProvider != null) 'externalProvider': externalProvider,
         'license': license,
         'artwork': artwork,
         if (artworkAlternatives.isNotEmpty)
@@ -70,6 +73,7 @@ class PlaybackTrack {
         artist: json['artist'] as String,
         genre: json['genre'] as String?,
         sourcePage: json['sourcePage'] as String?,
+        externalProvider: json['externalProvider'] as String?,
         license: json['license'] as String?,
         artwork: json['artwork'] as String?,
         artworkAlternatives: (json['artworkAlternatives'] as List?)
@@ -90,6 +94,7 @@ class PlaybackTrack {
         artist: artist,
         genre: genre,
         sourcePage: sourcePage,
+        externalProvider: externalProvider,
         license: license,
         artwork: artwork,
         artworkAlternatives: artworkAlternatives,

@@ -20,6 +20,11 @@ class AppPreferences extends ChangeNotifier {
     'es': 'Español',
     'de': 'Deutsch',
     'fr': 'Français',
+    'uk': 'Українська',
+    'pl': 'Polski',
+    'pt': 'Português',
+    'it': 'Italiano',
+    'tr': 'Türkçe',
   };
   static const _channel = MethodChannel('offlinetunes/hotkeys');
   static const _defaultKeys = [0x50, 0x4E, 0x42, 0x4D, 0x57];

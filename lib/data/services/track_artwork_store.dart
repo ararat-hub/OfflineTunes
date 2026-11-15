@@ -71,6 +71,15 @@ class TrackArtworkStore {
     return _candidate(saved, () async {
       final path =
           local.startsWith('file:') ? Uri.parse(local).toFilePath() : local;
+      if (Platform.isAndroid) {
+        try {
+          final bytes =
+              await _thumbnails.invokeMethod<Uint8List>('embeddedArt', path);
+          if (bytes != null && bytes.isNotEmpty) return bytes;
+        } catch (_) {
+          // Fall back to the cross-platform tag reader for unsupported codecs.
+        }
+      }
       final pictures = (await AudioTags.read(path))?.pictures ?? [];
       final picture = pictures
               .where((p) => p.pictureType == PictureType.coverFront)
@@ -102,9 +111,12 @@ class TrackArtworkStore {
         uri.userInfo.isNotEmpty) {
       return null;
     }
-    final response = await _client
-        .send(http.Request('GET', uri))
-        .timeout(const Duration(seconds: 4));
+    final request = http.Request('GET', uri)
+      ..headers['Accept'] = 'image/*, application/octet-stream;q=0.8'
+      ..headers['User-Agent'] =
+          'oTune (https://github.com/ararat-hub/OfflineTunes)';
+    final response =
+        await _client.send(request).timeout(const Duration(seconds: 4));
     if (response.statusCode != 200 ||
         (response.contentLength ?? 0) > _maxBytes) {
       await response.stream.listen((_) {}).cancel();
@@ -151,7 +163,8 @@ class TrackArtworkStore {
             }
           }
           final temp = File('${saved.path}.tmp');
-          await temp.writeAsBytes(png.buffer.asUint8List());
+          await temp.writeAsBytes(
+              png.buffer.asUint8List(png.offsetInBytes, png.lengthInBytes));
           return await temp.rename(saved.path);
         } finally {
           image.dispose();
