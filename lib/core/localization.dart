@@ -29,6 +29,15 @@ extension OfflineTunesLocalization on BuildContext {
 final _placeholder = RegExp(r'\{(\w+)\}');
 
 const _translations = <String, (String, String)>{
+  'Искать на YouTube': ('Search YouTube', 'Buscar en YouTube'),
+  'Выберите запись на YouTube': (
+    'Choose a recording on YouTube',
+    'Elige una grabación en YouTube'
+  ),
+  'Не удалось открыть полный поток Audius. Попробуйте ещё раз.': (
+    'The full Audius stream could not be opened. Try again.',
+    'No se pudo abrir el audio completo de Audius. Inténtalo otra vez.'
+  ),
   'Язык интерфейса': ('Interface language', 'Idioma de la interfaz'),
   'Найти язык': ('Find a language', 'Buscar idioma'),
   'Записи из музыкальных каталогов': (

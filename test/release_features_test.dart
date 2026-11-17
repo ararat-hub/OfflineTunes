@@ -8,6 +8,8 @@ import 'package:offlinetunes/data/db/app_database.dart';
 import 'package:offlinetunes/data/models/equalizer.dart';
 import 'package:offlinetunes/data/models/music_query.dart';
 import 'package:offlinetunes/data/models/playback_track.dart';
+import 'package:offlinetunes/data/services/audius_streams.dart';
+import 'package:offlinetunes/data/services/catalog_playback.dart';
 import 'package:offlinetunes/data/services/listening_history.dart';
 import 'package:offlinetunes/data/services/music_catalog.dart';
 import 'package:offlinetunes/data/services/update_service.dart';
@@ -17,6 +19,65 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test(
+      'catalog playback selects the official CUPSIZE recording by artist and title',
+      () {
+    const recording = PlaybackTrack(
+        path: 'https://www.deezer.com/track/42',
+        title: 'Юра, Юра',
+        artist: 'CUPSIZE',
+        externalProvider: 'Deezer');
+    expect(CatalogPlayback.officialVideo(recording), 'jcrA-YE65fE');
+    expect(
+        CatalogPlayback.officialVideo(const PlaybackTrack(
+            path: '/cover', title: 'Юра, Юра', artist: 'Другой исполнитель')),
+        isNull);
+  });
+
+  test(
+      'Audius playback recovers from an unreachable redirect using a full audio mirror',
+      () async {
+    final requests = <Uri>[];
+    final streams = AudiusStreams(MockClient((request) async {
+      final uri = request.url;
+      requests.add(uri);
+      if (uri.host == 'api.audius.co' && uri.path.endsWith('/stream')) {
+        return http.Response('', 302,
+            headers: {'location': 'https://first.example/audio'});
+      }
+      if (uri.host == 'api.audius.co') {
+        return http.Response(
+            jsonEncode({
+              'data': {
+                'id': 'Pala',
+                'is_streamable': true,
+                'is_stream_gated': false,
+                'stream': {
+                  'url': 'https://first.example/audio?token=signed',
+                  'mirrors': ['https://mirror.example'],
+                }
+              }
+            }),
+            200);
+      }
+      expect(request.headers['Range'], 'bytes=0-1');
+      if (uri.host == 'mirror.example') {
+        expect(uri.queryParameters['token'], 'signed');
+        return http.Response('ff', 206,
+            headers: {'content-type': 'audio/mpeg'});
+      }
+      return http.Response('Invalid route', 503);
+    }));
+    expect(await streams.resolve('https://api.audius.co/v1/tracks/Pala/stream'),
+        'https://mirror.example/audio?token=signed');
+    expect(requests.map((uri) => uri.host),
+        containsAll(['api.audius.co', 'first.example', 'mirror.example']));
+    expect(
+        await streams.resolve('https://api.audius.co/v1/tracks/Pala/preview'),
+        isNull);
+    streams.dispose();
+  });
 
   test('Russian music search handles artist aliases and ё in track names', () {
     expect(

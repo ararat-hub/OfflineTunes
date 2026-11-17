@@ -11,6 +11,7 @@ import '../../data/services/audio_player_service.dart';
 import '../../data/services/listening_history.dart';
 import '../../data/services/music_catalog.dart';
 import '../../widgets/track_row.dart';
+import '../../widgets/filter_choice.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key, required this.db});
@@ -73,6 +74,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     final audio = context.read<AudioPlayerService>();
+    final compact = MediaQuery.sizeOf(context).width < 520;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -96,18 +98,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               track: current, duration: audio.duration)),
                     ));
               }),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Wrap(spacing: 8, children: [
-            for (var i = 0; i < _categories.length; i++)
-              ChoiceChip(
-                avatar: Icon(_categories[i].$2, size: 17),
-                label: Text(context.tr(_categories[i].$1)),
-                selected: _category == i,
-                onSelected: (_) => setState(() => _category = i),
-              ),
-          ]),
-        ),
+        Wrap(spacing: 8, children: [
+          for (var i = 0; i < _categories.length; i++)
+            FilterChoice(
+              icon: compact ? null : _categories[i].$2,
+              label: context.tr(_categories[i].$1),
+              selected: _category == i,
+              onSelected: () => setState(() => _category = i),
+            ),
+        ]),
         const SizedBox(height: 12),
         Expanded(
           child: switch (_category) {
@@ -131,34 +130,45 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Align(
-                    alignment: Alignment.centerLeft,
-                    child: SingleChildScrollView(
+                Row(children: [
+                  Wrap(spacing: 6, children: [
+                    for (final (label, region) in const [
+                      ('Мир', ChartRegion.global),
+                      ('Россия', ChartRegion.russia),
+                    ])
+                      FilterChoice(
+                        label: context.tr(label),
+                        selected: _region == region,
+                        onSelected: () {
+                          if (_region != region) _refresh(region: region);
+                        },
+                      ),
+                  ]),
+                  if (_region == ChartRegion.global) ...[
+                    const SizedBox(width: 8),
+                    SizedBox(
+                        height: 24,
+                        child: VerticalDivider(
+                            width: 10,
+                            color:
+                                Theme.of(context).colorScheme.outlineVariant)),
+                    const SizedBox(width: 4),
+                    Expanded(
+                        child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: Wrap(spacing: 8, children: [
-                        for (final (label, region) in const [
-                          ('Мир', ChartRegion.global),
-                          ('Россия', ChartRegion.russia),
-                        ])
-                          ChoiceChip(
-                            label: Text(context.tr(label)),
-                            selected: _region == region,
-                            onSelected: (selected) {
-                              if (selected) _refresh(region: region);
+                      child: Row(spacing: 6, children: [
+                        for (final (label, genre) in _genres)
+                          FilterChoice(
+                            label: context.tr(label),
+                            selected: _genre == genre,
+                            onSelected: () {
+                              if (_genre != genre) _refresh(genre: genre);
                             },
                           ),
-                        if (_region == ChartRegion.global)
-                          for (final (label, genre) in _genres)
-                            ChoiceChip(
-                              label: Text(context.tr(label)),
-                              selected: _genre == genre,
-                              onSelected: (selected) {
-                                if (!selected) return;
-                                _refresh(genre: genre);
-                              },
-                            ),
                       ]),
                     )),
+                  ],
+                ]),
                 const SizedBox(height: 8),
                 Expanded(
                     child: FutureBuilder<ChartResults>(
@@ -174,8 +184,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                       ? (lookup.data?.page.tracks ??
                                           const <CatalogTrack>[])
                                       : const <CatalogTrack>[];
-                              final results =
-                                  chart.data?.tracks ?? const <CatalogTrack>[];
+                              final results = chart.connectionState ==
+                                      ConnectionState.done
+                                  ? chart.data?.tracks ?? const <CatalogTrack>[]
+                                  : const <CatalogTrack>[];
                               final ranked = lookup.data?.ranked == true;
                               final matches =
                                   (found.isNotEmpty ? found : results)

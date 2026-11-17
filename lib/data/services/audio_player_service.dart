@@ -6,10 +6,13 @@ import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/playback_track.dart';
 import '../models/equalizer.dart';
+import 'audius_streams.dart';
 import 'music_catalog.dart';
 
 class AudioPlayerService extends ChangeNotifier {
   final Player _player;
+  final AudiusStreams? audiusStreams;
+  final _resolvedMedia = <String, String>{};
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   late final Future<void> _ready;
   Future<void> _operations = Future.value();
@@ -32,7 +35,11 @@ class AudioPlayerService extends ChangeNotifier {
   final ValueChanged<PlaybackTrack>? onListened;
   String? _recordedPath;
 
-  AudioPlayerService({Player? player, this.onListened, this.requestAudioFocus})
+  AudioPlayerService(
+      {Player? player,
+      this.onListened,
+      this.requestAudioFocus,
+      this.audiusStreams})
       : _player = player ?? Player() {
     _subscriptions.addAll([
       _player.stream.playing.listen((value) {
@@ -71,10 +78,13 @@ class AudioPlayerService extends ChangeNotifier {
         _notify();
       }),
       _player.stream.playlist.listen((playlist) {
-        if (playlist.medias.isEmpty) return;
+        if (playlist.index < 0 || playlist.index >= playlist.medias.length) {
+          return;
+        }
         final uri = playlist.medias[playlist.index].uri;
         for (final track in _queue) {
-          if (Media(track.path).uri == uri && _current != track) {
+          if (Media(_resolvedMedia[track.path] ?? track.path).uri == uri &&
+              _current != track) {
             _current = track;
             _recordedPath = null;
             _position = Duration.zero;
@@ -90,10 +100,20 @@ class AudioPlayerService extends ChangeNotifier {
       }),
       _player.stream.error.listen((message) {
         debugPrint('Audio playback: $message');
+        final path = currentPath;
+        final recovery = _opened &&
+            audiusStreams != null &&
+            AudiusStreams.trackId(path) != null &&
+            !_resolvedMedia.containsKey(path);
         _error = 'Не удалось воспроизвести трек.';
         _isLoading = false;
         _isPlaying = false;
         _opened = false;
+        if (recovery) {
+          unawaited(_run(() async {
+            if (path == currentPath && !_opened) await _open();
+          }));
+        }
         _notify();
       }),
     ]);
@@ -207,6 +227,7 @@ class AudioPlayerService extends ChangeNotifier {
         if (tracks.isEmpty || index < 0 || index >= tracks.length) return;
         await _validate(tracks[index].path);
         _queue = List.of(tracks.where((track) => track.path.isNotEmpty));
+        _resolvedMedia.clear();
         _current = tracks[index];
         _position = Duration.zero;
         _duration = Duration.zero;
@@ -235,13 +256,26 @@ class AudioPlayerService extends ChangeNotifier {
     _notify();
     final savedPosition = _position;
     await _validate(currentPath);
+    final streams = audiusStreams;
+    final path = currentPath;
+    if (streams != null && AudiusStreams.trackId(path) != null) {
+      await _player.pause();
+      final resolved = await streams.resolve(path);
+      if (_disposed) return;
+      if (resolved == null) {
+        _error = 'Не удалось открыть полный поток Audius. Попробуйте ещё раз.';
+        return;
+      }
+      _resolvedMedia[path] = resolved;
+    }
     await _player.open(
         Playlist(
             _queue
                 .map((track) => Media(
-                      track.path,
+                      _resolvedMedia[track.path] ?? track.path,
                       httpHeaders: Uri.tryParse(track.path)?.host ==
-                              'upload.wikimedia.org'
+                                  'upload.wikimedia.org' ||
+                              AudiusStreams.trackId(track.path) != null
                           ? const {'User-Agent': MusicCatalog.userAgent}
                           : null,
                     ))
@@ -379,6 +413,7 @@ class AudioPlayerService extends ChangeNotifier {
     for (final sub in _subscriptions) {
       unawaited(sub.cancel());
     }
+    audiusStreams?.dispose();
     unawaited(_operations.then((_) => _player.dispose()));
     super.dispose();
   }

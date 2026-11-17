@@ -7,6 +7,7 @@ import '../../data/db/app_database.dart';
 import '../../data/models/playback_track.dart';
 import '../../data/services/listening_history.dart';
 import '../../widgets/track_row.dart';
+import '../../widgets/filter_choice.dart';
 import 'downloads_screen.dart';
 import '../favorites/favorites_screen.dart';
 
@@ -31,10 +32,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
               'Все треки',
               if (Platform.isAndroid) ...['Избранное', 'Загрузки']
             ].indexed)
-              ChoiceChip(
-                  label: Text(context.tr(label)),
+              FilterChoice(
+                  label: context.tr(label),
                   selected: _section == index,
-                  onSelected: (_) => setState(() => _section = index)),
+                  onSelected: () => setState(() => _section = index)),
             if (!Platform.isAndroid && _section < 2)
               DropdownButton<bool>(
                   value: _byTitle,

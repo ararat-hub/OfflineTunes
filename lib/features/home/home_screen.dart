@@ -10,6 +10,7 @@ import '../../data/db/app_database.dart';
 import '../../data/models/media_link.dart';
 import '../../data/services/app_preferences.dart';
 import '../../data/services/audio_player_service.dart';
+import '../../data/services/catalog_playback.dart';
 import '../../data/services/desktop_window_service.dart';
 import '../../data/services/update_service.dart';
 import '../../data/services/youtube_player_service.dart';
@@ -124,13 +125,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_checkUpdates());
-    if (Platform.isAndroid && state == AppLifecycleState.paused) {
-      unawaited(context.read<YoutubePlayerService>().pauseForVisibility());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_checkUpdates());
+      if (_compactAudio != null) {
+        _autoCompact = null;
+        unawaited(_readMobileCompact());
+        _syncCompact();
+      }
+    }
+    if (state == AppLifecycleState.paused) {
+      unawaited(_compactYoutube?.pauseForVisibility());
     }
   }
 
-  void _navigate(int index) => setState(() => _selectedIndex = index);
+  void _navigate(int index) {
+    context.read<CatalogPlayback?>()?.cancel();
+    setState(() => _selectedIndex = index);
+  }
+
   Future<void> _editFromWidget() async {
     await context.read<DesktopWindowService>().restore();
     if (mounted) _navigate(5);
@@ -205,6 +217,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _configureMobileCompact(bool enabled) async {
     try {
       await _compactChannel.invokeMethod<void>('configure', enabled);
+    } on MissingPluginException {
+      if (_autoCompact == enabled) _autoCompact = null;
     } on PlatformException catch (error) {
       debugPrint('Android compact window: $error');
     }
@@ -214,6 +228,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       _setMobileCompact(
           await _compactChannel.invokeMethod<bool>('state') == true);
+    } on MissingPluginException {
+      // The Activity can detach while the audio service keeps this engine alive.
     } on PlatformException catch (error) {
       debugPrint('Android compact window: $error');
     }
@@ -244,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ProfileScreen(onSettings: () => _navigate(5)),
       DiscoverScreen(db: widget.db),
     ];
-    return Scaffold(
+    final scaffold = Scaffold(
         backgroundColor: Colors.transparent,
         body: ClipRRect(
           borderRadius:
@@ -290,9 +306,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               ProfileAvatar(path: theme.avatarPath, size: 30)),
                     ])),
                 Expanded(
-                    child: youtube.active
-                        ? const YoutubePanel(fill: true)
-                        : pages[_selectedIndex]),
+                    child: Stack(fit: StackFit.expand, children: [
+                  Offstage(
+                      offstage: youtube.active,
+                      child: TickerMode(
+                          enabled: !youtube.active,
+                          child: pages[_selectedIndex])),
+                  if (youtube.active) const YoutubePanel(fill: true),
+                ])),
                 if (!youtube.active)
                   _MobilePlayerBar(
                       audio: context.read<AudioPlayerService>(),
@@ -414,7 +435,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             tooltip: context.tr('Открыть ссылку'),
                             icon: const Icon(Icons.link),
                             onPressed: () {
-                              if (youtube.watchPage) unawaited(youtube.close());
+                              if (youtube.watchPage) {
+                                unawaited(youtube.close());
+                              }
                               _navigate(4);
                             }),
                         PlayerControlButton(
@@ -445,6 +468,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ]),
           ]),
         ));
+    return PopScope(
+      canPop: !Platform.isAndroid || !youtube.active,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && Platform.isAndroid && youtube.active) {
+          unawaited(youtube.close());
+        }
+      },
+      child: scaffold,
+    );
   }
 }
 
@@ -588,8 +620,10 @@ class _MobilePlayerBar extends StatelessWidget {
               leading: TrackArtwork(track: track, size: 38),
               title: Text(track.title,
                   maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(track.artist,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(
+                  audio.error == null ? track.artist : context.tr(audio.error!),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 FavoriteTrackButton(track: track),
                 MobileIconButton(
@@ -600,13 +634,19 @@ class _MobilePlayerBar extends StatelessWidget {
                       duration: MediaQuery.disableAnimationsOf(context)
                           ? Duration.zero
                           : const Duration(milliseconds: 150),
-                      child: Icon(
-                          audio.isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          key: ValueKey(audio.isPlaying)),
+                      child: audio.isLoading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : Icon(
+                              audio.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              key: ValueKey(audio.isPlaying)),
                     ),
-                    onPressed: audio.togglePlayPause),
+                    onPressed: () {
+                      if (!audio.isLoading) audio.togglePlayPause();
+                    }),
               ]),
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (context) => Scaffold(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,8 @@ import 'package:timezone/data/latest.dart' as time_zones;
 import 'data/db/app_database.dart';
 import 'data/models/media_link.dart';
 import 'data/services/audio_player_service.dart';
+import 'data/services/audius_streams.dart';
+import 'data/services/catalog_playback.dart';
 import 'data/services/system_media_controls.dart';
 import 'data/services/listening_history.dart';
 import 'data/services/offline_tracks.dart';
@@ -38,7 +41,9 @@ void main(List<String> arguments) async {
   await preferences.initialize();
   await theme.ready;
   final history = ListeningHistory(prefs);
-  final audio = AudioPlayerService(onListened: history.record);
+  final audio = AudioPlayerService(
+      onListened: history.record,
+      audiusStreams: Platform.isAndroid ? AudiusStreams(http.Client()) : null);
   if (Platform.isAndroid) {
     try {
       final session = await SystemMediaControls.initialize(audio, theme);
@@ -80,6 +85,11 @@ void main(List<String> arguments) async {
                   context.read<AudioPlayerService>(),
                   onListened: context.read<ListeningHistory>().record,
                 )),
+        if (Platform.isAndroid)
+          ChangeNotifierProvider<CatalogPlayback>(
+              create: (context) => CatalogPlayback(
+                  context.read<AudioPlayerService>(),
+                  context.read<YoutubePlayerService>())),
         ChangeNotifierProvider<DesktopWindowService>(
             create: (context) => DesktopWindowService(
                 theme: theme,

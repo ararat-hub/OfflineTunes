@@ -10,6 +10,7 @@ import '../core/localization.dart';
 import '../data/models/playback_track.dart';
 import '../data/models/media_link.dart';
 import '../data/services/audio_player_service.dart';
+import '../data/services/catalog_playback.dart';
 import '../data/services/favorite_tracks.dart';
 import '../data/services/offline_tracks.dart';
 import '../data/services/track_artwork_store.dart';
@@ -17,11 +18,21 @@ import '../data/services/youtube_player_service.dart';
 
 void playHistoryTrack(
     BuildContext context, List<PlaybackTrack> tracks, PlaybackTrack selected) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  final playback = context.read<CatalogPlayback?>();
   if (selected.externalProvider != null) {
-    openTrackSource(context, selected);
+    if (playback != null) {
+      playback.play(selected);
+    } else {
+      openTrackSource(context, selected);
+    }
   } else if (selected.youtube) {
-    context.read<YoutubePlayerService>().open(MediaLink.parse(selected.path));
+    playback?.cancel();
+    context
+        .read<YoutubePlayerService>()
+        .open(MediaLink.parse(selected.path), recording: selected);
   } else {
+    playback?.cancel();
     final originals = tracks
         .where((track) => !track.youtube && track.externalProvider == null)
         .toList();
@@ -107,11 +118,7 @@ class TrackRow extends StatelessWidget {
               maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: trailing ??
           (track.externalProvider != null
-              ? IconButton(
-                  tooltip: context.tr('Открыть в {provider}',
-                      {'provider': track.externalProvider!}),
-                  onPressed: onPlay,
-                  icon: const Icon(Icons.north_east_rounded, size: 19))
+              ? _CatalogTrackButton(track: track, onPlay: onPlay)
               : rank == null
                   ? TrackActions(track: track, duration: duration)
                   : Row(mainAxisSize: MainAxisSize.min, children: [
@@ -137,6 +144,29 @@ class TrackRow extends StatelessWidget {
                       ),
                     ])),
       onTap: onPlay,
+    );
+  }
+}
+
+class _CatalogTrackButton extends StatelessWidget {
+  const _CatalogTrackButton({required this.track, required this.onPlay});
+  final PlaybackTrack track;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final inApp = context.read<CatalogPlayback?>() != null;
+    final pending = context.select<CatalogPlayback?, bool>(
+        (service) => service?.pending == track.identity);
+    return IconButton(
+      tooltip: context.tr(inApp ? 'Воспроизвести' : 'Открыть в {provider}',
+          {'provider': track.externalProvider!}),
+      onPressed: pending ? null : onPlay,
+      icon: pending
+          ? const SizedBox.square(
+              dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          : Icon(inApp ? Icons.play_arrow_rounded : Icons.north_east_rounded,
+              size: 22),
     );
   }
 }

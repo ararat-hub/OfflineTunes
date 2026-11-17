@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/localization.dart';
 import '../../widgets/track_row.dart';
+import '../../widgets/filter_choice.dart';
 import '../../data/db/app_database.dart';
 import '../../data/models/playback_track.dart';
 import '../../data/models/music_query.dart';
@@ -183,10 +184,11 @@ class _SearchScreenState extends State<SearchScreen> {
                 (_Scope.library, 'Медиатека'),
                 (_Scope.favorites, 'Избранное')
               ])
-                ChoiceChip(
-                    label: Text(context.tr(item.$2)),
+                FilterChoice(
+                    label: context.tr(item.$2),
                     selected: _scope == item.$1,
-                    onSelected: (_) {
+                    onSelected: () {
+                      if (_scope == item.$1) return;
                       _scope = item.$1;
                       _search();
                     }),
@@ -214,10 +216,6 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
               ],
-              if (_online[CatalogSource.recordings]?.isNotEmpty == true) ...[
-                _label(context.tr('Записи из музыкальных каталогов')),
-                _onlineSection(context, _online[CatalogSource.recordings]!),
-              ],
               if (_online[CatalogSource.audius]?.isNotEmpty == true ||
                   _online[CatalogSource.commons]?.isNotEmpty == true) ...[
                 _label(context.tr('Доступно в oTune')),
@@ -225,6 +223,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ...?_online[CatalogSource.audius],
                   ...?_online[CatalogSource.commons],
                 ]),
+              ],
+              if (_online[CatalogSource.recordings]?.isNotEmpty == true) ...[
+                _label(context.tr('Записи из музыкальных каталогов')),
+                _onlineSection(context, _online[CatalogSource.recordings]!),
               ],
               if (!_loading && _catalogFailed && emptyOnline)
                 SliverToBoxAdapter(

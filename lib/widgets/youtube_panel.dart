@@ -33,23 +33,29 @@ class YoutubePanel extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
                 child: Text(
-                    youtube.watchPage
-                        ? context.tr('Страница YouTube')
+                    youtube.searching
+                        ? context.tr('Выберите запись на YouTube')
                         : youtube.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis)),
-            if (youtube.controller != null &&
-                youtube.initialized &&
+            if (youtube.initialized &&
+                youtube.link != null &&
                 !youtube.watchPage &&
                 youtube.error != null)
               PlayerControlButton(
                   tooltip: context.tr('Открыть страницу YouTube здесь'),
                   icon: const Icon(Icons.ondemand_video, size: 18),
                   onPressed: youtube.openWatchPage),
-            PlayerControlButton(
-                tooltip: context.tr('Открыть в браузере'),
-                icon: const Icon(Icons.open_in_new, size: 18),
-                onPressed: youtube.openInBrowser),
+            if (youtube.canSearchRecording)
+              PlayerControlButton(
+                  tooltip: context.tr('Искать на YouTube'),
+                  icon: const Icon(Icons.search, size: 18),
+                  onPressed: youtube.searchAgain)
+            else if (youtube.link != null)
+              PlayerControlButton(
+                  tooltip: context.tr('Открыть в браузере'),
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  onPressed: youtube.openInBrowser),
             PlayerControlButton(
                 tooltip: context.tr('Закрыть YouTube'),
                 icon: const Icon(Icons.close, size: 18),
