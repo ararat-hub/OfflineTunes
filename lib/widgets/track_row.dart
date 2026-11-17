@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,24 +8,33 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/localization.dart';
+import '../data/db/app_database.dart';
 import '../data/models/playback_track.dart';
 import '../data/models/media_link.dart';
 import '../data/services/audio_player_service.dart';
 import '../data/services/catalog_playback.dart';
 import '../data/services/favorite_tracks.dart';
 import '../data/services/offline_tracks.dart';
+import '../data/services/scanner_service.dart';
 import '../data/services/track_artwork_store.dart';
 import '../data/services/youtube_player_service.dart';
 
-void playHistoryTrack(
-    BuildContext context, List<PlaybackTrack> tracks, PlaybackTrack selected) {
+Future<void> playHistoryTrack(BuildContext context, List<PlaybackTrack> tracks,
+    PlaybackTrack selected) async {
   FocusManager.instance.primaryFocus?.unfocus();
   final playback = context.read<CatalogPlayback?>();
-  if (selected.externalProvider != null) {
-    if (playback != null) {
-      playback.play(selected);
-    } else {
-      openTrackSource(context, selected);
+  if (CatalogPlayback.needsAudioLookup(selected)) {
+    final result = await playback?.play(selected);
+    if (context.mounted &&
+        (result == null || result == CatalogPlaybackResult.unavailable)) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(context.tr('Полный поток этой записи недоступен.')),
+          action: SnackBarAction(
+              label: context.tr('Выбрать аудиофайл'),
+              onPressed: () => _importRecording(context, selected)),
+        ));
     }
   } else if (selected.youtube) {
     playback?.cancel();
@@ -43,6 +53,38 @@ void playHistoryTrack(
     context
         .read<AudioPlayerService>()
         .playQueue(audio, index: originals.indexOf(selected));
+  }
+}
+
+Future<void> _importRecording(
+    BuildContext context, PlaybackTrack recording) async {
+  if (!context.mounted) return;
+  final scanner = ScannerService(context.read<AppDatabase>());
+  final audio = context.read<AudioPlayerService>();
+  try {
+    final file =
+        await openFile(acceptedTypeGroups: ScannerService.audioFileTypes);
+    if (file == null || !context.mounted) return;
+    final path = await scanner.importPickedAudio(file, recording: recording);
+    if (path == null) throw const FormatException('Unsupported audio file');
+    if (context.mounted) {
+      await audio.playQueue([
+        PlaybackTrack(
+          path: path,
+          title: recording.title,
+          artist: recording.artist,
+          libraryId: path,
+          artwork: recording.artwork,
+          artworkAlternatives: recording.artworkAlternatives,
+        ),
+      ]);
+    }
+  } catch (error) {
+    debugPrint('Import recording: $error');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(context.tr('Не удалось добавить аудиофайл.'))));
+    }
   }
 }
 
@@ -117,7 +159,7 @@ class TrackRow extends StatelessWidget {
           : Text(metadata.join(' · '),
               maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: trailing ??
-          (track.externalProvider != null
+          (CatalogPlayback.needsAudioLookup(track)
               ? _CatalogTrackButton(track: track, onPlay: onPlay)
               : rank == null
                   ? TrackActions(track: track, duration: duration)
@@ -155,18 +197,15 @@ class _CatalogTrackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final inApp = context.read<CatalogPlayback?>() != null;
     final pending = context.select<CatalogPlayback?, bool>(
         (service) => service?.pending == track.identity);
     return IconButton(
-      tooltip: context.tr(inApp ? 'Воспроизвести' : 'Открыть в {provider}',
-          {'provider': track.externalProvider!}),
+      tooltip: context.tr('Воспроизвести'),
       onPressed: pending ? null : onPlay,
       icon: pending
           ? const SizedBox.square(
               dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-          : Icon(inApp ? Icons.play_arrow_rounded : Icons.north_east_rounded,
-              size: 22),
+          : const Icon(Icons.play_arrow_rounded, size: 22),
     );
   }
 }

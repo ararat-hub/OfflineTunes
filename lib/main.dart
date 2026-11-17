@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as time_zones;
 import 'data/db/app_database.dart';
 import 'data/models/media_link.dart';
+import 'data/models/playback_track.dart';
 import 'data/services/audio_player_service.dart';
 import 'data/services/audius_streams.dart';
 import 'data/services/catalog_playback.dart';
@@ -85,11 +86,16 @@ void main(List<String> arguments) async {
                   context.read<AudioPlayerService>(),
                   onListened: context.read<ListeningHistory>().record,
                 )),
-        if (Platform.isAndroid)
-          ChangeNotifierProvider<CatalogPlayback>(
-              create: (context) => CatalogPlayback(
-                  context.read<AudioPlayerService>(),
-                  context.read<YoutubePlayerService>())),
+        ChangeNotifierProvider<CatalogPlayback>(create: (context) {
+          final downloads = context.read<OfflineTracks?>();
+          return CatalogPlayback(audio, () async {
+            await downloads?.ready;
+            return [
+              ...?downloads?.tracks,
+              ...(await db.getAllTracks()).map(PlaybackTrack.fromTrack),
+            ];
+          });
+        }),
         ChangeNotifierProvider<DesktopWindowService>(
             create: (context) => DesktopWindowService(
                 theme: theme,

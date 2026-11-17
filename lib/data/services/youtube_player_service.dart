@@ -29,7 +29,6 @@ class YoutubePlayerService extends ChangeNotifier {
   bool loading = false;
   bool playing = false;
   bool watchPage = false;
-  bool searching = false;
   bool _starting = false;
   bool _disposed = false;
   bool _recorded = false;
@@ -40,8 +39,6 @@ class YoutubePlayerService extends ChangeNotifier {
   PlaybackTrack? _recording;
   bool get initialized =>
       androidController != null || (controller?.value.isInitialized ?? false);
-  bool get canSearchRecording =>
-      Platform.isAndroid && _recording != null && !searching;
 
   YoutubePlayerService(this.audio, {this.onListened}) {
     audio.addListener(_audioChanged);
@@ -64,7 +61,6 @@ class YoutubePlayerService extends ChangeNotifier {
     playing = false;
     _recorded = false;
     watchPage = false;
-    searching = false;
     error = null;
     _recording = recording;
     title = recording?.title ?? 'YouTube · ${media.youtubeId}';
@@ -156,7 +152,6 @@ class YoutubePlayerService extends ChangeNotifier {
           }
           try {
             link = MediaLink.parse(uri.toString());
-            searching = false;
             _notify();
           } on FormatException {
             // A page may briefly navigate to /watch before its video is set.
@@ -346,30 +341,12 @@ class YoutubePlayerService extends ChangeNotifier {
         'consent.google.com'
       }.contains(uri.host);
 
-  Future<void> searchForRecording(PlaybackTrack recording) async {
-    if (!Platform.isAndroid) return;
-    _recording = recording;
-    title = recording.title;
-    link = null;
-    await _openAndroidPage(
-        Uri.https('m.youtube.com', '/results', {
-          'search_query': '${recording.artist} ${recording.title}',
-        }),
-        search: true);
-  }
-
-  Future<void> searchAgain() async {
-    final recording = _recording;
-    if (recording != null) await searchForRecording(recording);
-  }
-
-  Future<void> _openAndroidPage(Uri url, {bool search = false}) async {
+  Future<void> _openAndroidPage(Uri url) async {
     final generation = ++_generation;
     _timeout?.cancel();
     _starting = true;
     active = true;
     watchPage = true;
-    searching = search;
     playing = false;
     loading = true;
     error = null;
@@ -411,7 +388,6 @@ class YoutubePlayerService extends ChangeNotifier {
     playing = false;
     loading = false;
     watchPage = false;
-    searching = false;
     _recording = null;
     link = null;
     _notify();

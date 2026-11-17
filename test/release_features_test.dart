@@ -20,19 +20,30 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test(
-      'catalog playback selects the official CUPSIZE recording by artist and title',
-      () {
-    const recording = PlaybackTrack(
-        path: 'https://www.deezer.com/track/42',
-        title: 'Юра, Юра',
-        artist: 'CUPSIZE',
-        externalProvider: 'Deezer');
-    expect(CatalogPlayback.officialVideo(recording), 'jcrA-YE65fE');
+  test('previous catalogue history is resolved as audio after the update', () {
+    const youtube = 'https://www.youtube.com/watch?v=jcrA-YE65fE';
     expect(
-        CatalogPlayback.officialVideo(const PlaybackTrack(
-            path: '/cover', title: 'Юра, Юра', artist: 'Другой исполнитель')),
-        isNull);
+        CatalogPlayback.needsAudioLookup(const PlaybackTrack(
+            path: youtube,
+            title: 'Юра, Юра',
+            artist: 'CUPSIZE',
+            youtube: true)),
+        isFalse);
+    expect(
+        CatalogPlayback.needsAudioLookup(const PlaybackTrack(
+            path: youtube,
+            title: 'Юра, Юра',
+            artist: 'CUPSIZE',
+            youtube: true,
+            originalPath: 'https://www.deezer.com/track/42')),
+        isTrue);
+    expect(
+        CatalogPlayback.needsAudioLookup(const PlaybackTrack(
+            path: 'https://www.deezer.com/track/42',
+            title: 'Юра, Юра',
+            artist: 'CUPSIZE',
+            externalProvider: 'Deezer')),
+        isTrue);
   });
 
   test(

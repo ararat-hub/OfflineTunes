@@ -1,13 +1,53 @@
 import 'dart:io';
 import 'package:audiotags/audiotags.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:drift/drift.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 import '../db/app_database.dart';
+import '../models/playback_track.dart';
 
 class ScannerService {
   final AppDatabase db;
 
   ScannerService(this.db);
+
+  static const audioExtensions = [
+    'mp3',
+    'flac',
+    'm4a',
+    'wav',
+    'ogg',
+    'opus',
+    'aac'
+  ];
+  static const audioFileTypes = [
+    XTypeGroup(extensions: audioExtensions, mimeTypes: ['audio/*'])
+  ];
+
+  Future<String?> importPickedAudio(XFile file,
+      {PlaybackTrack? recording}) async {
+    final extension = p.extension(file.name).toLowerCase();
+    if (!audioExtensions.contains(extension.replaceFirst('.', ''))) return null;
+    final folder = Directory(p.join(
+        (await getApplicationSupportDirectory()).path, 'imported_music'));
+    await folder.create(recursive: true);
+    final destination =
+        File(p.join(folder.path, '${const Uuid().v4()}$extension'));
+    try {
+      await file.saveTo(destination.path);
+      if (await importAudioFile(destination.path,
+          originalName: file.name, recording: recording)) {
+        return destination.path;
+      }
+    } catch (error) {
+      debugPrint('Copy audio file: $error');
+    }
+    if (await destination.exists()) await destination.delete();
+    return null;
+  }
 
   Future<int> scanDirectory(String directoryPath) async {
     final dir = Directory(directoryPath);
@@ -27,7 +67,8 @@ class ScannerService {
     return addedCount;
   }
 
-  Future<bool> importAudioFile(String filePath, {String? originalName}) async {
+  Future<bool> importAudioFile(String filePath,
+      {String? originalName, PlaybackTrack? recording}) async {
     try {
       Tag? tag;
       try {
@@ -50,8 +91,8 @@ class ScannerService {
       await db.into(db.tracks).insertOnConflictUpdate(
             TracksCompanion.insert(
               id: filePath,
-              title: title,
-              artist: artist, // Передаем обычную строку
+              title: recording?.title ?? title,
+              artist: recording?.artist ?? artist,
               album: Value(album),
               duration: Value(duration),
               localPath: Value(filePath),

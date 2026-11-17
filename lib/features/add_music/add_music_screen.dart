@@ -3,9 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:provider/provider.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
 import '../../data/db/app_database.dart';
 import '../../data/services/scanner_service.dart';
 import '../../widgets/open_link_card.dart';
@@ -59,31 +56,12 @@ class _AddMusicScreenState extends State<AddMusicScreen> {
       _addedCount = null;
     });
     try {
-      const extensions = ['mp3', 'flac', 'm4a', 'wav', 'ogg', 'opus', 'aac'];
-      final files = await openFiles(acceptedTypeGroups: const [
-        XTypeGroup(extensions: extensions, mimeTypes: ['audio/*'])
-      ]);
+      final files =
+          await openFiles(acceptedTypeGroups: ScannerService.audioFileTypes);
       if (files.isEmpty || !mounted) return;
-      final folder = Directory(p.join(
-          (await getApplicationSupportDirectory()).path, 'imported_music'));
-      await folder.create(recursive: true);
       var added = 0;
       for (final file in files) {
-        final extension = p.extension(file.name).toLowerCase();
-        if (!extensions.contains(extension.replaceFirst('.', ''))) continue;
-        final destination =
-            File(p.join(folder.path, '${const Uuid().v4()}$extension'));
-        try {
-          await file.saveTo(destination.path);
-          if (await scanner.importAudioFile(destination.path,
-              originalName: file.name)) {
-            added++;
-          } else {
-            await destination.delete();
-          }
-        } catch (_) {
-          if (await destination.exists()) await destination.delete();
-        }
+        if (await scanner.importPickedAudio(file) != null) added++;
       }
       if (mounted) {
         setState(() {

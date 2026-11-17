@@ -3,11 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinetunes/data/db/app_database.dart' show Track;
 import 'package:offlinetunes/data/models/playback_track.dart';
 import 'package:offlinetunes/data/services/audio_player_service.dart';
+import 'package:offlinetunes/data/services/catalog_playback.dart';
 import 'package:offlinetunes/widgets/mini_player.dart';
 
 class FakePlayer extends PlatformPlayer {
@@ -88,6 +91,11 @@ const first = PlaybackTrack(
     path: 'https://example.com/a.mp3', title: 'Первый', artist: 'Автор');
 const second = PlaybackTrack(
     path: 'https://example.com/b.mp3', title: 'Второй', artist: 'Автор');
+const cupsize = PlaybackTrack(
+    path: 'https://www.deezer.com/track/42',
+    title: 'Юра, Юра',
+    artist: 'CUPSIZE',
+    externalProvider: 'Deezer');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -102,6 +110,46 @@ void main() {
   tearDown(() async {
     service.dispose();
     await Future<void>.delayed(Duration.zero);
+  });
+
+  test('catalogue playback uses the matching device file without a request',
+      () async {
+    final file = File('${Directory.systemTemp.path}/otune-catalog-local.mp3');
+    await file.create();
+    addTearDown(file.delete);
+    final catalog = CatalogPlayback(service, () async {
+      return [
+        PlaybackTrack(
+            path: file.path, title: cupsize.title, artist: 'Cover band'),
+        PlaybackTrack(
+            path: file.path,
+            title: 'CUPSIZE - Юра, Юра.mp3',
+            artist: 'Неизвестный исполнитель'),
+      ];
+    }, client: MockClient((request) async {
+      fail('An available local recording should play without networking.');
+    }));
+    addTearDown(catalog.dispose);
+
+    expect(await catalog.play(cupsize), CatalogPlaybackResult.started);
+    expect(service.currentPath, file.path);
+    expect(service.currentTitle, 'CUPSIZE - Юра, Юра.mp3');
+    expect(service.isPlaying, isTrue);
+  });
+
+  test('missing catalogue audio leaves the current playback active', () async {
+    final catalog = CatalogPlayback(service, () async => [],
+        client: MockClient((request) async {
+      expect(request.url.host, 'api.audius.co');
+      return http.Response('{"data":[]}', 200);
+    }));
+    addTearDown(catalog.dispose);
+    await service.playQueue([first]);
+
+    expect(await catalog.play(cupsize), CatalogPlaybackResult.unavailable);
+    expect(service.currentPath, first.path);
+    expect(service.isPlaying, isTrue);
+    expect(catalog.pending, isNull);
   });
 
   test('database UUID resolves to localPath, legacy paths still work', () {
