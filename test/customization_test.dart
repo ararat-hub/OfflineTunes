@@ -215,7 +215,7 @@ void main() {
     });
     final theme = ThemeProvider();
     await theme.ready;
-    expect(theme.widgetWidth, 360);
+    expect(theme.widgetWidth, 340);
     expect(theme.dim, .85);
     expect(theme.fontFamily, 'System');
     expect(theme.bgType, BackgroundType.ambient);
@@ -300,7 +300,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('oTune'), findsOneWidget);
-    await tester.binding.setSurfaceSize(const Size(360, 250));
+    await tester.binding.setSurfaceSize(const Size(340, 220));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.binding.setSurfaceSize(const Size(900, 800));

@@ -88,6 +88,9 @@ class PlaybackTrack {
 
   String get identity => originalPath ?? path;
 
+  PlaybackTrack withArtwork(String value) =>
+      PlaybackTrack.fromJson({...toJson(), 'artwork': value});
+
   PlaybackTrack withPath(String value) => PlaybackTrack(
         path: value,
         title: title,

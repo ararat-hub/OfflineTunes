@@ -29,6 +29,23 @@ extension OfflineTunesLocalization on BuildContext {
 final _placeholder = RegExp(r'\{(\w+)\}');
 
 const _translations = <String, (String, String)>{
+  'Недавние': ('Recent', 'Recientes'),
+  'Слушать в oTune': ('Play in oTune', 'Escuchar en oTune'),
+  'Другие записи': ('Other recordings', 'Otras grabaciones'),
+  'Найти полную запись': ('Find full recording', 'Buscar grabación completa'),
+  'Для этих записей oTune ищет полный поток или файл в вашей медиатеке.': (
+    'oTune looks for a full stream or a matching file in your library.',
+    'oTune busca una transmisión completa o un archivo en tu biblioteca.'
+  ),
+  'Для этой записи доступна карточка каталога. Добавьте аудиофайл, чтобы слушать её в oTune.':
+      (
+    'This catalogue entry has no full audio stream. Add an audio file to play it in oTune.',
+    'Esta entrada no tiene audio completo. Añade un archivo para escucharla en oTune.'
+  ),
+  'Не удалось загрузить аудиопоток. Повторите попытку.': (
+    'Could not load the audio stream. Try again.',
+    'No se pudo cargar el audio. Inténtalo de nuevo.'
+  ),
   'Полный поток этой записи недоступен.': (
     'The full recording is unavailable.',
     'La grabación completa no está disponible.'

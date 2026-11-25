@@ -218,14 +218,16 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
               if (_online[CatalogSource.audius]?.isNotEmpty == true ||
                   _online[CatalogSource.commons]?.isNotEmpty == true) ...[
-                _label(context.tr('Доступно в oTune')),
+                _label(context.tr('Слушать в oTune')),
                 _onlineSection(context, [
                   ...?_online[CatalogSource.audius],
                   ...?_online[CatalogSource.commons],
                 ]),
               ],
               if (_online[CatalogSource.recordings]?.isNotEmpty == true) ...[
-                _label(context.tr('Записи из музыкальных каталогов')),
+                _label(context.tr('Другие записи'),
+                    subtitle: context.tr(
+                        'Для этих записей oTune ищет полный поток или файл в вашей медиатеке.')),
                 _onlineSection(context, _online[CatalogSource.recordings]!),
               ],
               if (!_loading && _catalogFailed && emptyOnline)
@@ -276,11 +278,20 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  SliverToBoxAdapter _label(String text) => SliverToBoxAdapter(
+  SliverToBoxAdapter _label(String text, {String? subtitle}) =>
+      SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
           child:
-              Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(text,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ]),
         ),
       );
 }

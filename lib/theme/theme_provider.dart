@@ -128,8 +128,8 @@ class ThemeProvider extends ChangeNotifier {
     'bio': defaultProfileBio,
     'avatar': '',
     'widgetStyle': 'glass',
-    'widgetWidth': 480.0,
-    'widgetHeight': 320.0,
+    'widgetWidth': 400.0,
+    'widgetHeight': 270.0,
     'widgetRadius': 24.0,
     'widgetDim': .28,
     'widgetOnTop': true,
@@ -347,6 +347,13 @@ class ThemeProvider extends ChangeNotifier {
       if (encoded != null) {
         final data = jsonDecode(encoded);
         if (data is Map<String, dynamic>) _merge(data);
+        if (_prefs!.getBool('compact_widget_v3') != true) {
+          if (widgetWidth == 480 && widgetHeight == 320) {
+            _settings['widgetWidth'] = 400.0;
+            _settings['widgetHeight'] = 270.0;
+          }
+          await _prefs!.setString('appearance_v2', jsonEncode(_settings));
+        }
       } else {
         final oldPath = _prefs!.getString('bg_image_path') ?? '';
         final oldType = _prefs!.getInt('bg_type') ?? 0;
@@ -359,6 +366,9 @@ class ThemeProvider extends ChangeNotifier {
           'backgroundColor':
               _prefs!.getInt('bg_color') ?? _defaults['backgroundColor'],
         });
+      }
+      if (_prefs!.getBool('compact_widget_v3') != true) {
+        await _prefs!.setBool('compact_widget_v3', true);
       }
     } catch (e) {
       debugPrint('Не удалось загрузить оформление: $e');
@@ -408,8 +418,8 @@ class ThemeProvider extends ChangeNotifier {
       'widgetDim': [.0, .85],
       'widgetBlur': [-1.0, 16.0],
       'widgetRadius': [0.0, 40.0],
-      'widgetWidth': [360.0, 800.0],
-      'widgetHeight': [250.0, 700.0]
+      'widgetWidth': [340.0, 800.0],
+      'widgetHeight': [220.0, 700.0]
     }.entries) {
       _settings[entry.key] = (_settings[entry.key] as double)
           .clamp(entry.value[0], entry.value[1]);

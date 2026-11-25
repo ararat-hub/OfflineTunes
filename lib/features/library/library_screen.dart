@@ -27,26 +27,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 8, runSpacing: 6, children: [
-            for (final (index, label) in [
-              'Недавно прослушанные',
-              'Все треки',
-              if (Platform.isAndroid) ...['Избранное', 'Загрузки']
-            ].indexed)
+            for (final (index, label)
+                in ['Недавние', 'Все треки', 'Избранное', 'Загрузки'].indexed)
               FilterChoice(
                   label: context.tr(label),
                   selected: _section == index,
                   onSelected: () => setState(() => _section = index)),
-            if (!Platform.isAndroid && _section < 2)
-              DropdownButton<bool>(
-                  value: _byTitle,
-                  items: [
-                    DropdownMenuItem(
-                        value: false, child: Text(context.tr('По времени'))),
-                    DropdownMenuItem(
-                        value: true, child: Text(context.tr('По названию'))),
-                  ],
-                  onChanged: (value) => setState(() => _byTitle = value!)),
           ]),
+          if (!Platform.isAndroid && _section < 2)
+            Align(
+                alignment: Alignment.centerRight,
+                child: DropdownButton<bool>(
+                    value: _byTitle,
+                    items: [
+                      DropdownMenuItem(
+                          value: false, child: Text(context.tr('По времени'))),
+                      DropdownMenuItem(
+                          value: true, child: Text(context.tr('По названию'))),
+                    ],
+                    onChanged: (value) => setState(() => _byTitle = value!))),
           const SizedBox(height: 12),
           Expanded(
               child: switch (_section) {

@@ -25,6 +25,7 @@ class FakePlayer extends PlatformPlayer {
   bool delayMetadata = false;
 
   void emitPosition(Duration value) => positionController.add(value);
+  void emitError(String value) => errorController.add(value);
 
   void emitMetadata() {
     state = state.copyWith(duration: const Duration(seconds: 60));
@@ -181,6 +182,33 @@ void main() {
     expect(service.currentTitle, 'Второй');
     expect(service.duration, const Duration(seconds: 60));
     expect(engine.nextCount, 1);
+  });
+
+  test('loading lasts until the selected native stream has metadata', () async {
+    engine.delayMetadata = true;
+    final opening = service.playQueue([first]);
+    await engine.openedSignal.future;
+    expect(service.isLoading, isTrue);
+    engine.emitMetadata();
+    await opening;
+    expect(service.isLoading, isFalse);
+    expect(service.duration, const Duration(seconds: 60));
+  });
+
+  test('native loading errors stop loading and permit another selection',
+      () async {
+    engine.delayMetadata = true;
+    final opening = service.playQueue([first]);
+    await engine.openedSignal.future;
+    engine.emitError('Unable to open stream');
+    await opening;
+    expect(service.error, isNotNull);
+    expect(service.isLoading, isFalse);
+    expect(service.isPlaying, isFalse);
+    engine.delayMetadata = false;
+    await service.playQueue([second]);
+    expect(service.error, isNull);
+    expect(service.currentPath, second.path);
   });
 
   test('resume reopens saved file before playing and seeks saved position',

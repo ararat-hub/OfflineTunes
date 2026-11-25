@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../../core/localization.dart';
 import '../../data/db/app_database.dart';
 import '../../data/models/music_query.dart';
-import '../../data/services/audio_player_service.dart';
 import '../../data/services/listening_history.dart';
 import '../../data/services/music_catalog.dart';
 import '../../widgets/track_row.dart';
@@ -73,31 +72,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final audio = context.read<AudioPlayerService>();
     final compact = MediaQuery.sizeOf(context).width < 520;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (_category != 0)
-          Selector<AudioPlayerService, String>(
-              selector: (_, player) => player.currentPath,
-              builder: (context, path, _) {
-                final current = audio.currentTrack;
-                if (current == null) return const SizedBox.shrink();
-                return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Material(
-                      color: Theme.of(context).colorScheme.surfaceContainer,
-                      borderRadius: BorderRadius.circular(10),
-                      child: ListTile(
-                          leading: TrackArtwork(track: current),
-                          title: Text(current.title,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(context.tr('Сейчас играет')),
-                          trailing: TrackActions(
-                              track: current, duration: audio.duration)),
-                    ));
-              }),
         Wrap(spacing: 8, children: [
           for (var i = 0; i < _categories.length; i++)
             FilterChoice(
@@ -254,7 +232,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                       ),
                                       child: Row(children: [
                                         TrackArtwork(
-                                            track: queue.first, size: 62),
+                                            track: queue.first, size: 48),
                                         const SizedBox(width: 14),
                                         Expanded(
                                             child: Column(
@@ -272,7 +250,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                                         : 'Топ треков'),
                                                 style: Theme.of(context)
                                                     .textTheme
-                                                    .titleLarge
+                                                    .titleMedium
                                                     ?.copyWith(
                                                         fontWeight:
                                                             FontWeight.w700)),

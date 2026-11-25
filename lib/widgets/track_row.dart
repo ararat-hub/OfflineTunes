@@ -9,8 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/localization.dart';
 import '../data/db/app_database.dart';
-import '../data/models/playback_track.dart';
 import '../data/models/media_link.dart';
+import '../data/models/playback_track.dart';
 import '../data/services/audio_player_service.dart';
 import '../data/services/catalog_playback.dart';
 import '../data/services/favorite_tracks.dart';
@@ -27,18 +27,33 @@ Future<void> playHistoryTrack(BuildContext context, List<PlaybackTrack> tracks,
     final result = await playback?.play(selected);
     if (context.mounted &&
         (result == null || result == CatalogPlaybackResult.unavailable)) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(context.tr('Полный поток этой записи недоступен.')),
-          action: SnackBarAction(
-              label: context.tr('Выбрать аудиофайл'),
-              onPressed: () => _importRecording(context, selected)),
-        ));
+      final import = await showDialog<bool>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+                title: Text(selected.title),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  TrackArtwork(track: selected, size: 96),
+                  const SizedBox(height: 16),
+                  Text(context.tr(
+                      'Для этой записи доступна карточка каталога. Добавьте аудиофайл, чтобы слушать её в oTune.')),
+                ]),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(dialog, false),
+                      child: Text(context.tr('Закрыть'))),
+                  FilledButton.icon(
+                      onPressed: () => Navigator.pop(dialog, true),
+                      icon: const Icon(Icons.audio_file_outlined),
+                      label: Text(context.tr('Выбрать аудиофайл'))),
+                ],
+              ));
+      if (import == true && context.mounted) {
+        await _importRecording(context, selected);
+      }
     }
   } else if (selected.youtube) {
     playback?.cancel();
-    context
+    await context
         .read<YoutubePlayerService>()
         .open(MediaLink.parse(selected.path), recording: selected);
   } else {
@@ -121,14 +136,15 @@ class TrackRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final time = duration?.inSeconds;
-    final narrowChart = rank != null && MediaQuery.sizeOf(context).width < 560;
+    final wide = MediaQuery.sizeOf(context).width >= 720;
+    final selected = context.select<AudioPlayerService?, bool>(
+        (audio) => audio?.currentTrack?.identity == track.identity);
     final metadata = [
       if (track.artist.isNotEmpty) track.artist,
       if (time != null && rank == null)
         '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
-      if (track.license != null) track.license!,
       if (track.externalProvider != null) track.externalProvider!,
-      if (playCount != null)
+      if (playCount != null && wide)
         context.tr('Прослушиваний: {count}', {
           'count': NumberFormat.decimalPattern(
                   Localizations.localeOf(context).languageCode)
@@ -136,9 +152,13 @@ class TrackRow extends StatelessWidget {
         }),
     ];
     return ListTile(
+      selected: selected,
+      selectedTileColor:
+          Theme.of(context).colorScheme.primary.withValues(alpha: .08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      minVerticalPadding: 10,
       horizontalTitleGap: rank == null ? null : 12,
-      contentPadding:
-          rank == null ? null : const EdgeInsets.symmetric(horizontal: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: rank == null
           ? TrackArtwork(track: track)
           : Row(
@@ -159,32 +179,16 @@ class TrackRow extends StatelessWidget {
           : Text(metadata.join(' · '),
               maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: trailing ??
-          (CatalogPlayback.needsAudioLookup(track)
-              ? _CatalogTrackButton(track: track, onPlay: onPlay)
-              : rank == null
-                  ? TrackActions(track: track, duration: duration)
-                  : Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (time != null)
-                        Text(
-                            '${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
-                            style: Theme.of(context).textTheme.labelMedium),
-                      if (!narrowChart) FavoriteTrackButton(track: track),
-                      IconButton(
-                        icon: const Icon(Icons.more_horiz),
-                        tooltip: context.tr('О треке'),
-                        onPressed: () => showModalBottomSheet<void>(
-                          context: context,
-                          builder: (sheet) => SafeArea(
-                              child: ListTile(
-                            leading: TrackArtwork(track: track),
-                            title: Text(track.title),
-                            subtitle: Text(track.artist),
-                            trailing:
-                                TrackActions(track: track, duration: duration),
-                          )),
-                        ),
-                      ),
-                    ])),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            if (time != null && wide && rank != null)
+              Text('${time ~/ 60}:${(time % 60).toString().padLeft(2, '0')}',
+                  style: Theme.of(context).textTheme.labelMedium),
+            if (CatalogPlayback.needsAudioLookup(track))
+              _CatalogTrackButton(track: track, onPlay: onPlay)
+            else
+              _TrackPlayButton(track: track, onPlay: onPlay),
+            TrackActions(track: track, duration: duration),
+          ]),
       onTap: onPlay,
     );
   }
@@ -200,13 +204,42 @@ class _CatalogTrackButton extends StatelessWidget {
     final pending = context.select<CatalogPlayback?, bool>(
         (service) => service?.pending == track.identity);
     return IconButton(
-      tooltip: context.tr('Воспроизвести'),
+      tooltip: context.tr('Найти полную запись'),
       onPressed: pending ? null : onPlay,
       icon: pending
           ? const SizedBox.square(
               dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-          : const Icon(Icons.play_arrow_rounded, size: 22),
+          : const Icon(Icons.audio_file_outlined, size: 21),
     );
+  }
+}
+
+class _TrackPlayButton extends StatelessWidget {
+  const _TrackPlayButton({required this.track, required this.onPlay});
+  final PlaybackTrack track;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final state =
+        context.select<AudioPlayerService?, (bool, bool, bool)>((audio) => (
+              audio?.currentTrack?.identity == track.identity,
+              audio?.isPlaying ?? false,
+              audio?.isLoading ?? false
+            ));
+    final loading = state.$1 && state.$3;
+    final playing = state.$1 && state.$2;
+    return IconButton(
+        tooltip: context.tr(playing ? 'Пауза' : 'Воспроизвести'),
+        onPressed: loading
+            ? null
+            : state.$1
+                ? context.read<AudioPlayerService>().togglePlayPause
+                : onPlay,
+        icon: loading
+            ? const SizedBox.square(
+                dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded));
   }
 }
 
@@ -239,28 +272,40 @@ class _TrackArtworkState extends State<TrackArtwork> {
   Widget build(BuildContext context) {
     final size = widget.size;
     final colors = Theme.of(context).colorScheme;
+    final name = widget.track?.title ?? '';
+    final tint = Color(0xFF000000 |
+        (name.codeUnits
+            .fold<int>(0, (value, code) => (value * 31 + code) & 0xffffff)));
+    final coverColor = HSLColor.fromColor(tint)
+        .withSaturation(.22)
+        .withLightness(.24)
+        .toColor();
     final fallback = DecoratedBox(
       decoration: BoxDecoration(
-        gradient: Platform.isAndroid
-            ? LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                    colors.primaryContainer,
-                    colors.surfaceContainerHighest
-                  ])
-            : null,
+        gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              name.isEmpty ? colors.primaryContainer : coverColor,
+              colors.surfaceContainerHighest
+            ]),
         color: colors.surfaceContainerHighest,
       ),
       child: Center(
-          child: Icon(
-              widget.track?.youtube == true
-                  ? Icons.smart_display_outlined
-                  : Platform.isAndroid
-                      ? Icons.graphic_eq_rounded
-                      : Icons.music_note_rounded,
-              color: colors.onPrimaryContainer,
-              size: size * .48)),
+          child: name.isNotEmpty
+              ? Text(String.fromCharCode(name.runes.first).toUpperCase(),
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: size * .40,
+                      fontWeight: FontWeight.w500))
+              : Icon(
+                  widget.track?.youtube == true
+                      ? Icons.smart_display_outlined
+                      : Platform.isAndroid
+                          ? Icons.graphic_eq_rounded
+                          : Icons.music_note_rounded,
+                  color: colors.onPrimaryContainer,
+                  size: size * .48)),
     );
     return ClipRRect(
         borderRadius: BorderRadius.circular(7),
@@ -322,72 +367,92 @@ class TrackActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final offline = context.watch<OfflineTracks?>();
-    final path = track.path;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      if (offline != null &&
-          track.downloadUrl != null &&
-          (Uri.tryParse(path)?.scheme == 'https'))
-        if (offline.isLoading(path))
-          SizedBox.square(
-              dimension: 24,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  value: offline.progress(path),
-                  semanticsLabel: context.tr('Скачивание')))
-        else
-          IconButton(
-              tooltip:
-                  context.tr(offline.contains(path) ? 'Скачано' : 'Скачать'),
-              icon: Icon(
-                  offline.contains(path)
-                      ? Icons.download_done_rounded
-                      : Icons.download_outlined,
-                  size: 21),
-              onPressed: offline.contains(path)
-                  ? null
-                  : () async {
-                      try {
-                        await offline.download(track);
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(
-                                  context.tr('Не удалось скачать трек.'))));
-                        }
-                      }
-                    }),
-      FavoriteTrackButton(track: track),
-      IconButton(
-          tooltip: context.tr('О треке'),
-          icon: const Icon(Icons.info_outline_rounded, size: 19),
-          onPressed: () => showDialog<void>(
-              context: context,
-              builder: (dialog) => AlertDialog(
-                    title: Text(track.title),
-                    content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TrackArtwork(track: track, size: 104),
-                          const SizedBox(height: 12),
-                          if (track.artist.isNotEmpty) Text(track.artist),
-                          if (duration != null)
-                            Text(
-                                '${duration!.inMinutes}:${(duration!.inSeconds % 60).toString().padLeft(2, '0')}'),
-                          if (track.license != null) Text(track.license!),
-                          if (track.sourcePage != null)
-                            TextButton.icon(
-                                onPressed: () =>
-                                    openTrackSource(context, track),
-                                icon: const Icon(Icons.open_in_new),
-                                label: Text(context.tr('Источник записи'))),
-                        ]),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(dialog),
-                          child: Text(context.tr('Закрыть')))
-                    ],
-                  ))),
-    ]);
+    final favorites = context.watch<FavoriteTracks?>();
+    final identity = track.identity;
+    final downloaded = offline?.contains(identity) == true;
+    final downloading = offline?.isLoading(identity) == true;
+    final favorite = favorites?.contains(track) == true;
+    final canDownload = offline != null && track.downloadUrl != null;
+
+    return PopupMenuButton<String>(
+        tooltip: context.tr('О треке'),
+        icon: downloading
+            ? SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, value: offline?.progress(identity)))
+            : const Icon(Icons.more_horiz_rounded, size: 21),
+        itemBuilder: (_) => [
+              if (favorites != null)
+                PopupMenuItem(
+                    value: 'favorite',
+                    child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(favorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded),
+                        title: Text(context.tr(favorite
+                            ? 'Убрать из избранного'
+                            : 'В избранное')))),
+              if (canDownload)
+                PopupMenuItem(
+                    value: 'download',
+                    enabled: !downloaded && !downloading,
+                    child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(downloaded
+                            ? Icons.download_done_rounded
+                            : Icons.download_rounded),
+                        title: Text(
+                            context.tr(downloaded ? 'Скачано' : 'Скачать')))),
+              PopupMenuItem(
+                  value: 'info',
+                  child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.info_outline_rounded),
+                      title: Text(context.tr('О треке')))),
+            ],
+        onSelected: (action) async {
+          try {
+            if (action == 'favorite') await favorites?.toggle(track);
+            if (action == 'download') await offline?.download(track);
+            if (action == 'info' && context.mounted) _details(context);
+          } catch (_) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(context.tr(action == 'download'
+                      ? 'Не удалось скачать трек.'
+                      : 'Не удалось сохранить настройки.'))));
+            }
+          }
+        });
   }
+
+  void _details(BuildContext context) => showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+            title: Text(track.title),
+            content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TrackArtwork(track: track, size: 128),
+                  const SizedBox(height: 16),
+                  if (track.artist.isNotEmpty) Text(track.artist),
+                  if (duration != null)
+                    Text(
+                        '${duration!.inMinutes}:${(duration!.inSeconds % 60).toString().padLeft(2, '0')}'),
+                  if (track.license != null) Text(track.license!),
+                  if (track.sourcePage != null)
+                    TextButton.icon(
+                        onPressed: () => openTrackSource(context, track),
+                        icon: const Icon(Icons.open_in_new),
+                        label: Text(context.tr('Источник записи'))),
+                ]),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialog),
+                  child: Text(context.tr('Закрыть'))),
+            ],
+          ));
 }

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../db/app_database.dart';
 import '../models/playback_track.dart';
+import 'track_artwork_store.dart';
 
 class ScannerService {
   final AppDatabase db;
@@ -40,6 +41,9 @@ class ScannerService {
       await file.saveTo(destination.path);
       if (await importAudioFile(destination.path,
           originalName: file.name, recording: recording)) {
+        if (recording != null) {
+          await TrackArtworkStore.saveForAudio(recording, destination.path);
+        }
         return destination.path;
       }
     } catch (error) {

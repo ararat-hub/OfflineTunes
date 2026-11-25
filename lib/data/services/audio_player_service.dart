@@ -13,6 +13,8 @@ class AudioPlayerService extends ChangeNotifier {
   final Player _player;
   final AudiusStreams? audiusStreams;
   final _resolvedMedia = <String, String>{};
+  final _retriedMedia = <String>{};
+  Completer<bool>? _mediaLoaded;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   late final Future<void> _ready;
   Future<void> _operations = Future.value();
@@ -47,6 +49,9 @@ class AudioPlayerService extends ChangeNotifier {
         _notify();
       }),
       _player.stream.position.listen((value) {
+        if (value > Duration.zero && _mediaLoaded?.isCompleted == false) {
+          _mediaLoaded!.complete(true);
+        }
         // Native players can publish an initial zero before a file is opened.
         // Keep the restored position until _open has loaded and sought the file.
         if (!_opened) return;
@@ -67,6 +72,9 @@ class AudioPlayerService extends ChangeNotifier {
       }),
       _player.stream.duration.listen((value) {
         _duration = value;
+        if (value > Duration.zero && _mediaLoaded?.isCompleted == false) {
+          _mediaLoaded!.complete(true);
+        }
         _notify();
       }),
       _player.stream.completed.listen((value) {
@@ -99,12 +107,13 @@ class AudioPlayerService extends ChangeNotifier {
         }
       }),
       _player.stream.error.listen((message) {
-        debugPrint('Audio playback: $message');
+        debugPrint('Audio playback failed.');
+        if (_mediaLoaded?.isCompleted == false) _mediaLoaded!.complete(false);
         final path = currentPath;
         final recovery = _opened &&
             audiusStreams != null &&
             AudiusStreams.trackId(path) != null &&
-            !_resolvedMedia.containsKey(path);
+            _retriedMedia.add(path);
         _error = 'Не удалось воспроизвести трек.';
         _isLoading = false;
         _isPlaying = false;
@@ -228,6 +237,7 @@ class AudioPlayerService extends ChangeNotifier {
         await _validate(tracks[index].path);
         _queue = List.of(tracks.where((track) => track.path.isNotEmpty));
         _resolvedMedia.clear();
+        _retriedMedia.clear();
         _current = tracks[index];
         _position = Duration.zero;
         _duration = Duration.zero;
@@ -245,7 +255,10 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> _open() async {
-    if (requestAudioFocus != null && !await requestAudioFocus!()) return;
+    if (requestAudioFocus != null && !await requestAudioFocus!()) {
+      _error = 'Не удалось воспроизвести трек.';
+      return;
+    }
     _isLoading = true;
     _opened = false;
     _completed = false;
@@ -268,20 +281,38 @@ class AudioPlayerService extends ChangeNotifier {
       }
       _resolvedMedia[path] = resolved;
     }
-    await _player.open(
-        Playlist(
-            _queue
-                .map((track) => Media(
-                      _resolvedMedia[track.path] ?? track.path,
-                      httpHeaders: Uri.tryParse(track.path)?.host ==
-                                  'upload.wikimedia.org' ||
-                              AudiusStreams.trackId(track.path) != null
-                          ? const {'User-Agent': MusicCatalog.userAgent}
-                          : null,
-                    ))
-                .toList(),
-            index: _queue.indexOf(_current!)),
-        play: false);
+    final loaded = _mediaLoaded = Completer<bool>();
+    try {
+      await _player.open(
+          Playlist(
+              _queue
+                  .map((track) => Media(
+                        _resolvedMedia[track.path] ?? track.path,
+                        httpHeaders: Uri.tryParse(track.path)?.host ==
+                                    'upload.wikimedia.org' ||
+                                AudiusStreams.trackId(track.path) != null
+                            ? const {'User-Agent': MusicCatalog.userAgent}
+                            : null,
+                      ))
+                  .toList(),
+              index: _queue.indexOf(_current!)),
+          play: false);
+      final duration = _player.state.duration;
+      if (duration > Duration.zero && !loaded.isCompleted) {
+        _duration = duration;
+        loaded.complete(true);
+      }
+      await _player.play();
+      final ready = await loaded.future
+          .timeout(const Duration(seconds: 25), onTimeout: () => false);
+      if (!ready || _disposed) {
+        _error ??= 'Не удалось загрузить аудиопоток. Повторите попытку.';
+        await _player.pause();
+        return;
+      }
+    } finally {
+      if (_mediaLoaded == loaded) _mediaLoaded = null;
+    }
     await _player.setPlaylistMode(_repeat);
     await _player.setShuffle(_shuffle);
     if (savedPosition > Duration.zero) {
@@ -299,7 +330,6 @@ class AudioPlayerService extends ChangeNotifier {
     }
     _position = savedPosition;
     _opened = true;
-    await _player.play();
     await _saveState();
   }
 
@@ -407,6 +437,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_mediaLoaded?.isCompleted == false) _mediaLoaded!.complete(false);
     _disposed = true;
     _saveTimer?.cancel();
     unawaited(_saveState());

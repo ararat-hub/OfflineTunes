@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:path/path.dart' as p;
 import 'package:offlinetunes/data/models/playback_track.dart';
 import 'package:offlinetunes/data/services/app_preferences.dart';
 import 'package:offlinetunes/data/services/offline_tracks.dart';
@@ -87,6 +90,59 @@ void main() {
     complete = true;
     await service.download(track);
     expect(service.tracks, hasLength(1));
+  });
+
+  test('download artwork survives cache deletion and offline restart',
+      () async {
+    final root = await Directory.systemTemp.createTemp('otune-durable-cover');
+    addTearDown(() => root.delete(recursive: true));
+    final cache = File('${root.path}/temporary-cover.png');
+    await cache.writeAsBytes([137, 80, 78, 71]);
+    final downloads = OfflineTracks(
+        directory: () async => root,
+        artwork: (_) async => cache,
+        client: MockClient((_) async => http.Response.bytes(
+            [79, 103, 103, 83], 200,
+            headers: {'content-type': 'audio/ogg'})));
+    await downloads.download(track);
+    final cover = File(downloads.tracks.single.artwork!);
+    expect(cover.path, isNot(cache.path));
+    await cache.delete();
+    downloads.dispose();
+    final offline = OfflineTracks(
+        directory: () async => root,
+        artwork: (_) async =>
+            fail('Saved artwork must load without a request.'));
+    addTearDown(offline.dispose);
+    await offline.ready;
+    expect(offline.tracks.single.artwork, cover.path);
+    expect(await cover.readAsBytes(), [137, 80, 78, 71]);
+    await offline.remove(offline.tracks.single);
+    expect(await cover.exists(), isFalse);
+  });
+
+  test('existing downloads regain an independently saved cover', () async {
+    final root = await Directory.systemTemp.createTemp('otune-legacy-cover');
+    addTearDown(() => root.delete(recursive: true));
+    final directory = await Directory('${root.path}/downloads').create();
+    await File('${directory.path}/old.ogg').writeAsBytes([79, 103, 103, 83]);
+    await File('${directory.path}/old.json')
+        .writeAsString(jsonEncode({...track.toJson(), 'file': 'old.ogg'}));
+    final cache = File('${root.path}/cover.png');
+    await cache.writeAsBytes([137, 80, 78, 71]);
+    final changed = Completer<void>();
+    final downloads =
+        OfflineTracks(directory: () async => root, artwork: (_) async => cache);
+    addTearDown(downloads.dispose);
+    downloads.addListener(() {
+      if (!changed.isCompleted &&
+          downloads.tracks.firstOrNull?.artwork != null) {
+        changed.complete();
+      }
+    });
+    await changed.future.timeout(const Duration(seconds: 3));
+    expect(p.normalize(downloads.tracks.single.artwork!),
+        p.normalize(p.join(directory.path, 'old.art.png')));
   });
 
   test('the selected zone changes the displayed day and respects summer time',

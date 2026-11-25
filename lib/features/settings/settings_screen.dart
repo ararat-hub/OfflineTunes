@@ -26,37 +26,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (context.watch<AppPreferences>().supportsHotkeys) 'Горячие клавиши',
       'Обновления'
     ];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            for (var i = 0; i < labels.length; i++)
-              ChoiceChip(
-                label: Text(context.tr(labels[i])),
-                selected: _section == i,
-                onSelected: (_) => setState(() => _section = i),
-              ),
-          ],
-        ),
-      ),
-      Expanded(
-        child: SingleChildScrollView(
-          key: ValueKey(_section),
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-          child: switch (labels[_section]) {
-            'Звук' => const SoundSettings(),
-            'Язык' => const _LanguageSettings(),
-            'Дата и время' => const _TimeSettings(),
-            'Горячие клавиши' => const _HotkeySettings(),
-            'Обновления' => const UpdateControls(),
-            _ => const AppearanceEditor(),
-          },
-        ),
-      ),
-    ]);
+
+    final content = SingleChildScrollView(
+      key: ValueKey(_section),
+      padding: const EdgeInsets.all(20),
+      child: switch (labels[_section]) {
+        'Звук' => const SoundSettings(),
+        'Язык' => const _LanguageSettings(),
+        'Дата и время' => const _TimeSettings(),
+        'Горячие клавиши' => const _HotkeySettings(),
+        'Обновления' => const UpdateControls(),
+        _ => const AppearanceEditor(),
+      },
+    );
+    IconData icon(String label) => switch (label) {
+          'Звук' => Icons.graphic_eq_rounded,
+          'Язык' => Icons.language_rounded,
+          'Дата и время' => Icons.schedule_rounded,
+          'Горячие клавиши' => Icons.keyboard_outlined,
+          'Обновления' => Icons.system_update_outlined,
+          _ => Icons.palette_outlined,
+        };
+    return LayoutBuilder(builder: (context, box) {
+      if (box.maxWidth >= 840) {
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(
+              width: 192,
+              child: ListView(padding: const EdgeInsets.all(12), children: [
+                for (var i = 0; i < labels.length; i++)
+                  ListTile(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      selected: _section == i,
+                      selectedTileColor: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: .12),
+                      leading: Icon(icon(labels[i]), size: 19),
+                      title: Text(context.tr(labels[i]),
+                          style: const TextStyle(fontSize: 13)),
+                      onTap: () => setState(() => _section = i)),
+              ])),
+          const VerticalDivider(width: 1),
+          Expanded(child: content),
+        ]);
+      }
+      return Column(children: [
+        Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: DropdownButtonFormField<int>(
+                initialValue: _section,
+                decoration:
+                    InputDecoration(prefixIcon: Icon(icon(labels[_section]))),
+                items: [
+                  for (var i = 0; i < labels.length; i++)
+                    DropdownMenuItem(
+                        value: i, child: Text(context.tr(labels[i]))),
+                ],
+                onChanged: (index) {
+                  if (index != null) setState(() => _section = index);
+                })),
+        Expanded(child: content),
+      ]);
+    });
   }
 }
 

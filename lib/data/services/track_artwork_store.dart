@@ -63,6 +63,12 @@ class TrackArtworkStore {
 
   static Future<File?> _resolve(
       Set<String> images, String local, File saved) async {
+    if (local.isNotEmpty) {
+      final path =
+          local.startsWith('file:') ? Uri.parse(local).toFilePath() : local;
+      final pinned = File('$path.otune.png');
+      if (await pinned.exists()) return pinned;
+    }
     for (final url in images) {
       final image = await _candidate(saved, () => _download(url));
       if (image != null) return image;
@@ -89,6 +95,16 @@ class TrackArtworkStore {
     });
   }
 
+  static Future<void> saveForAudio(
+      PlaybackTrack track, String audioPath) async {
+    try {
+      final image = await resolve(track);
+      if (image != null) await image.copy('$audioPath.otune.png');
+    } on Exception {
+      // Importing playable audio can still succeed when a cover is unavailable.
+    }
+  }
+
   static Future<Uint8List?> _background(String path) async {
     if (path.startsWith('asset:///')) {
       final frame =
@@ -104,6 +120,14 @@ class TrackArtworkStore {
   }
 
   static Future<Uint8List?> _download(String url) async {
+    if (_local(url)) {
+      final file =
+          url.startsWith('file:') ? File.fromUri(Uri.parse(url)) : File(url);
+      if (await file.exists() && await file.length() <= _maxBytes) {
+        return file.readAsBytes();
+      }
+      return null;
+    }
     final uri = Uri.tryParse(url);
     if (uri == null ||
         uri.scheme != 'https' ||

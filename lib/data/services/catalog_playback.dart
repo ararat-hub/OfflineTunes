@@ -10,7 +10,7 @@ import '../models/playback_track.dart';
 import 'audio_player_service.dart';
 import 'music_catalog.dart';
 
-enum CatalogPlaybackResult { started, unavailable, cancelled }
+enum CatalogPlaybackResult { started, unavailable, cancelled, failed }
 
 /// Opens the recording itself, using catalogue pages only for attribution.
 class CatalogPlayback extends ChangeNotifier {
@@ -44,13 +44,18 @@ class CatalogPlayback extends ChangeNotifier {
       if (_disposed || selection != _selection) {
         return CatalogPlaybackResult.cancelled;
       }
-      full ??= await _findAudiusRecording(track);
+      full ??= await Stream.fromFutures([
+        _findAudiusRecording(track, '${track.artist} ${track.title}'),
+        if (track.artist.isNotEmpty) _findAudiusRecording(track, track.title),
+      ]).firstWhere((recording) => recording != null, orElse: () => null);
       if (_disposed || selection != _selection) {
         return CatalogPlaybackResult.cancelled;
       }
       if (full == null) return CatalogPlaybackResult.unavailable;
       await _audio.playQueue([full]);
-      return CatalogPlaybackResult.started;
+      return _audio.error == null
+          ? CatalogPlaybackResult.started
+          : CatalogPlaybackResult.failed;
     } finally {
       if (!_disposed && _selection == selection) {
         pending = null;
@@ -98,12 +103,12 @@ class CatalogPlayback extends ChangeNotifier {
             MusicQuery.recordingArtist(artist) == wantedArtist);
   }
 
-  Future<PlaybackTrack?> _findAudiusRecording(PlaybackTrack track) async {
+  Future<PlaybackTrack?> _findAudiusRecording(
+      PlaybackTrack track, String query) async {
     try {
       final page = await _catalog
-          .search('${track.artist} ${track.title}',
-              source: CatalogSource.audius)
-          .timeout(const Duration(seconds: 4));
+          .search(query, source: CatalogSource.audius)
+          .timeout(const Duration(seconds: 15));
       final matching = page.tracks
           .map((entry) => entry.track)
           .where((stream) => _sameRecording(track, stream.artist, stream.title))

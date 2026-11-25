@@ -547,7 +547,7 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             SettingSlider(
                 label: context.tr('Ширина'),
                 value: theme.widgetWidth,
-                min: 360,
+                min: 340,
                 max: 800,
                 display: '${theme.widgetWidth.round()} px',
                 onChanged: (v) =>
@@ -555,7 +555,7 @@ class _AppearanceEditorState extends State<AppearanceEditor> {
             SettingSlider(
                 label: context.tr('Высота'),
                 value: theme.widgetHeight,
-                min: 250,
+                min: 220,
                 max: 700,
                 display: '${theme.widgetHeight.round()} px',
                 onChanged: (v) =>

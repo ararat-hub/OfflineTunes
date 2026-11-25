@@ -250,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final fullWatchPage = youtube.watchPage && _selectedIndex == 4;
     final navigationIndex =
         _navigation.indexWhere((item) => item.$1 == _selectedIndex);
-    final pages = [
+    final pages = <Widget>[
       _Dashboard(onNavigate: _navigate),
       SearchScreen(db: widget.db),
       const LibraryScreen(),
@@ -259,7 +259,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       const SettingsScreen(),
       ProfileScreen(onSettings: () => _navigate(5)),
       DiscoverScreen(db: widget.db),
-    ];
+    ]
+        .indexed
+        .map((entry) => entry.$1 == 0 || entry.$1 == 6
+            ? entry.$2
+            : Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1120),
+                    child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                            Platform.isAndroid ? 8 : 16,
+                            0,
+                            Platform.isAndroid ? 8 : 16,
+                            12),
+                        child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: ColoredBox(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surface
+                                    .withValues(alpha: .92),
+                                child: entry.$2))))))
+        .toList();
     final scaffold = Scaffold(
         backgroundColor: Colors.transparent,
         body: ClipRRect(
@@ -507,7 +529,7 @@ class _FloatingPlayer extends StatelessWidget {
                         behavior: HitTestBehavior.opaque,
                         onPanStart: (_) => window.drag(),
                         child: const SizedBox(
-                            height: 48,
+                            height: 40,
                             child: Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(AppStrings.appName,

@@ -11,11 +11,16 @@ import 'package:uuid/uuid.dart';
 import '../models/playback_track.dart';
 import '../models/media_link.dart';
 import 'music_catalog.dart';
+import 'track_artwork_store.dart';
 
 class OfflineTracks extends ChangeNotifier {
-  OfflineTracks({http.Client? client, Future<Directory> Function()? directory})
+  OfflineTracks(
+      {http.Client? client,
+      Future<Directory> Function()? directory,
+      Future<File?> Function(PlaybackTrack)? artwork})
       : _client = client ?? http.Client(),
-        _directory = directory ?? getApplicationSupportDirectory {
+        _directory = directory ?? getApplicationSupportDirectory,
+        _artwork = artwork ?? ((track) => TrackArtworkStore.resolve(track)) {
     ready = _load().catchError((Object error) {
       _initializationError = error;
       debugPrint('Open downloads: $error');
@@ -27,6 +32,7 @@ class OfflineTracks extends ChangeNotifier {
 
   final http.Client _client;
   final Future<Directory> Function() _directory;
+  final Future<File?> Function(PlaybackTrack) _artwork;
   late final Future<void> ready;
   late final Directory _root;
   final _downloads = <String, ({PlaybackTrack track, File metadata})>{};
@@ -67,7 +73,9 @@ class OfflineTracks extends ChangeNotifier {
         if (p.basename(name) != name) continue;
         final audio = File(p.join(_root.path, name));
         if (await audio.exists()) {
-          final track = PlaybackTrack.fromJson(json);
+          var track = PlaybackTrack.fromJson(json);
+          final cover = _cover(file);
+          if (await cover.exists()) track = track.withArtwork(cover.path);
           _downloads[track.identity] =
               (track: track.withPath(audio.path), metadata: file);
         }
@@ -76,6 +84,40 @@ class OfflineTracks extends ChangeNotifier {
       }
     }
     _changed();
+    unawaited(_restoreArtwork());
+  }
+
+  File _cover(File metadata) => File(p.join(
+      _root.path, '${p.basenameWithoutExtension(metadata.path)}.art.png'));
+
+  Future<void> _restoreArtwork() async {
+    for (final entry in _downloads.entries.toList()) {
+      if (_disposed) return;
+      final previous = entry.value;
+      if (await _cover(previous.metadata).exists()) continue;
+      final track = await _saveArtwork(previous.track, previous.metadata);
+      if (_downloads[entry.key] == previous && !_disposed) {
+        _downloads[entry.key] = (track: track, metadata: previous.metadata);
+        _changed();
+      } else if (!_downloads.containsKey(entry.key)) {
+        final cover = _cover(previous.metadata);
+        if (await cover.exists()) await cover.delete();
+      }
+    }
+  }
+
+  Future<PlaybackTrack> _saveArtwork(PlaybackTrack track, File metadata) async {
+    try {
+      final image = await _artwork(track);
+      if (image == null || !await image.exists()) return track;
+      final cover = _cover(metadata);
+      final temporary = File('${cover.path}.pending');
+      await image.copy(temporary.path);
+      await temporary.rename(cover.path);
+      return track.withArtwork(cover.path);
+    } on Exception {
+      return track;
+    }
   }
 
   Future<void> download(PlaybackTrack track) async {
@@ -152,8 +194,8 @@ class OfflineTracks extends ChangeNotifier {
           jsonEncode({...track.toJson(), 'file': name}),
           flush: true);
       final metadata = await manifest.rename(p.join(_root.path, '$id.json'));
-      _downloads[identity] =
-          (track: track.withPath(audio.path), metadata: metadata);
+      final local = await _saveArtwork(track.withPath(audio.path), metadata);
+      _downloads[identity] = (track: local, metadata: metadata);
       committed = true;
     } finally {
       _active.remove(identity);
@@ -206,6 +248,8 @@ class OfflineTracks extends ChangeNotifier {
       if (await entry.value.metadata.exists()) {
         await entry.value.metadata.delete();
       }
+      final cover = _cover(entry.value.metadata);
+      if (await cover.exists()) await cover.delete();
       _downloads.remove(entry.key);
       _changed();
       break;

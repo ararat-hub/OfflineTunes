@@ -43,8 +43,7 @@ void main(List<String> arguments) async {
   await theme.ready;
   final history = ListeningHistory(prefs);
   final audio = AudioPlayerService(
-      onListened: history.record,
-      audiusStreams: Platform.isAndroid ? AudiusStreams(http.Client()) : null);
+      onListened: history.record, audiusStreams: AudiusStreams(http.Client()));
   if (Platform.isAndroid) {
     try {
       final session = await SystemMediaControls.initialize(audio, theme);
@@ -69,8 +68,7 @@ void main(List<String> arguments) async {
         ChangeNotifierProvider<AppPreferences>(create: (_) => preferences),
         ChangeNotifierProvider(create: (_) => history, lazy: false),
         ChangeNotifierProvider(create: (_) => FavoriteTracks(db, prefs)),
-        if (Platform.isAndroid)
-          ChangeNotifierProvider(create: (_) => OfflineTracks()),
+        ChangeNotifierProvider(create: (_) => OfflineTracks()),
         Provider(
             create: (_) => UpdateService(prefs),
             dispose: (_, updates) => updates.dispose()),

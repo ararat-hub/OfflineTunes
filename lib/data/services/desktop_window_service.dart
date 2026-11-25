@@ -39,7 +39,7 @@ class DesktopWindowService extends ChangeNotifier with WindowListener {
       if (_wasMaximized) await windowManager.unmaximize();
       _normalBounds = await windowManager.getBounds();
       await windowManager
-          .setMinimumSize(Size(youtube ? 480 : 360, youtube ? 480 : 250));
+          .setMinimumSize(Size(youtube ? 480 : 340, youtube ? 480 : 220));
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden,
           windowButtonVisibility: false);
       await windowManager.setAlwaysOnTop(theme.widgetOnTop);
