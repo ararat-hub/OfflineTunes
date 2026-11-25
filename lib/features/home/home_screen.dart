@@ -273,14 +273,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             0,
                             Platform.isAndroid ? 8 : 16,
                             12),
-                        child: ClipRRect(
+                        child: Material(
                             borderRadius: BorderRadius.circular(16),
-                            child: ColoredBox(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surface
-                                    .withValues(alpha: .92),
-                                child: entry.$2))))))
+                            clipBehavior: Clip.antiAlias,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surface
+                                .withValues(alpha: .92),
+                            child: entry.$2)))))
         .toList();
     final scaffold = Scaffold(
         backgroundColor: Colors.transparent,
