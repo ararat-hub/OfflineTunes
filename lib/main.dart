@@ -9,6 +9,7 @@ import 'data/models/media_link.dart';
 import 'data/models/playback_track.dart';
 import 'data/services/audio_player_service.dart';
 import 'data/services/audius_streams.dart';
+import 'data/services/zaycev_streams.dart';
 import 'data/services/catalog_playback.dart';
 import 'data/services/system_media_controls.dart';
 import 'data/services/listening_history.dart';
@@ -43,7 +44,9 @@ void main(List<String> arguments) async {
   await theme.ready;
   final history = ListeningHistory(prefs);
   final audio = AudioPlayerService(
-      onListened: history.record, audiusStreams: AudiusStreams(http.Client()));
+      onListened: history.record,
+      audiusStreams: AudiusStreams(http.Client()),
+      zaycevStreams: ZaycevStreams(http.Client()));
   if (Platform.isAndroid) {
     try {
       final session = await SystemMediaControls.initialize(audio, theme);

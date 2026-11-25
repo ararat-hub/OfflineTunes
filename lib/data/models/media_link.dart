@@ -20,6 +20,24 @@ class MediaLink {
         (host.startsWith('cdns-preview-') && host.endsWith('.dzcdn.net'));
   }
 
+  static const zaycevHost = 'zaycev.net';
+  static final _zaycevPage = RegExp(r'^/pages/\d+/(\d+)\.shtml$');
+
+  static Uri zaycevTrackPage(int id) =>
+      Uri.https(zaycevHost, '/pages/${id ~/ 100}/$id.shtml');
+
+  static int? zaycevTrackId(String path) {
+    final uri = Uri.tryParse(path);
+    if (uri == null ||
+        !uri.isScheme('https') ||
+        uri.host != zaycevHost ||
+        uri.userInfo.isNotEmpty) {
+      return null;
+    }
+    final match = _zaycevPage.firstMatch(uri.path);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
   Uri get canonicalYoutubeUrl => Uri.https('www.youtube.com', '/watch',
       {'v': youtubeId!, if (startSeconds > 0) 't': '${startSeconds}s'});
 

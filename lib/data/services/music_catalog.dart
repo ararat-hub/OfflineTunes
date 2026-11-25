@@ -6,8 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/playback_track.dart';
 import '../models/music_query.dart';
+import '../models/media_link.dart';
 
-enum CatalogSource { recordings, audius, commons }
+enum CatalogSource { recordings, audius, commons, zaycev }
 
 enum ChartRegion { global, russia }
 
@@ -40,6 +41,7 @@ class MusicCatalog {
       return (await searchRecordings(term, offset: offset)).page;
     }
     if (source == CatalogSource.audius) return _searchAudius(term, offset);
+    if (source == CatalogSource.zaycev) return _searchZaycev(term, offset);
     final uri = Uri.https(_host, '/w/api.php', {
       'action': 'query',
       'format': 'json',
@@ -61,6 +63,81 @@ class MusicCatalog {
                 queryWords.matches(item.track.title, item.track.artist))
             .toList(),
         page.nextOffset);
+  }
+
+  Future<CatalogPage> _searchZaycev(String term, int offset) async {
+    final uri = Uri.https(MediaLink.zaycevHost, '/search.html', {
+      'query_search': term,
+      'type': 'track',
+      if (offset > 0) 'tracks-page': '${offset + 1}',
+    });
+    final response = await _client.get(uri,
+        headers: {'User-Agent': userAgent}).timeout(const Duration(seconds: 8));
+    if (response.statusCode != 200) {
+      throw http.ClientException('${uri.host}: ${response.statusCode}', uri);
+    }
+    return parseZaycevSearch(utf8.decode(response.bodyBytes), term, offset);
+  }
+
+  static CatalogPage parseZaycevSearch(String html, String term, int offset) {
+    final data =
+        RegExp(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', dotAll: true)
+            .firstMatch(html)
+            ?.group(1);
+    if (data == null) throw const FormatException('Missing search data');
+    final decoded = jsonDecode(data);
+    final properties = decoded is Map ? decoded['props'] : null;
+    final initial = properties is Map ? properties['initialReduxState'] : null;
+    final state = initial is Map ? initial['playlist'] : null;
+    final groups = state is Map ? state['trackIds'] : null;
+    final info = state is Map ? state['info'] : null;
+    final status = state is Map ? state['status'] : null;
+    if (groups is! Map || info is! Map) {
+      throw const FormatException('Invalid search data');
+    }
+    final key = groups.keys
+        .whereType<String>()
+        .where((key) => key.startsWith('search_'))
+        .firstOrNull;
+    final ids = groups[key];
+    if (ids is! List) return const CatalogPage([], null);
+
+    final query = MusicQuery(term);
+    final tracks = <CatalogTrack>[];
+    for (final id in ids.whereType<int>()) {
+      final item = info['$id'];
+      if (item is! Map || item['playbackEnabled'] != true) continue;
+      final title = item['track'];
+      final artist = item['artistName'];
+      final time = item['duration'];
+      if (title is! String ||
+          artist is! String ||
+          time is! String ||
+          !query.matches(title, artist)) {
+        continue;
+      }
+      final parts = time.split(':').map(int.tryParse).toList();
+      if (parts.length != 2 || parts.any((part) => part == null)) continue;
+      final duration = Duration(minutes: parts[0]!, seconds: parts[1]!);
+      if (duration <= Duration.zero) continue;
+      final path = MediaLink.zaycevTrackPage(id).toString();
+      tracks.add(CatalogTrack(
+          PlaybackTrack(
+            path: path,
+            title: title,
+            artist: artist,
+            artwork: _https(item['imageJpg']) ?? _https(item['imageWebp']),
+            sourcePage: path,
+          ),
+          duration));
+    }
+    tracks.sort((a, b) => query
+        .score(b.track.title, b.track.artist)
+        .compareTo(query.score(a.track.title, a.track.artist)));
+    final paging = status is Map ? status[key] : null;
+    final pages = paging is Map ? paging['pagesCount'] : null;
+    return CatalogPage(
+        tracks, pages is int && pages > offset + 1 ? offset + 1 : null);
   }
 
   Future<RankedSearch> searchRecordings(String term, {int offset = 0}) async {

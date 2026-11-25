@@ -61,6 +61,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final requests = append
         ? Map.of(_offsets)
         : {
+            if (_scope == _Scope.all) CatalogSource.zaycev: 0,
             if (_scope == _Scope.all) CatalogSource.audius: 0,
             if (_scope == _Scope.all) CatalogSource.commons: 0,
           };
@@ -221,10 +222,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
               ],
-              if (_online[CatalogSource.audius]?.isNotEmpty == true ||
-                  _online[CatalogSource.commons]?.isNotEmpty == true) ...[
+              if (!emptyOnline) ...[
                 _label(context.tr('Слушать в oTune')),
                 _onlineSection(context, [
+                  ...?_online[CatalogSource.zaycev],
                   ...?_online[CatalogSource.audius],
                   ...?_online[CatalogSource.commons],
                 ]),

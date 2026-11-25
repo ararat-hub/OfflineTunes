@@ -46,6 +46,61 @@ void main() {
         isTrue);
   });
 
+  test('guest Russian search returns the full label recording with stable id',
+      () async {
+    final playlist = {
+      'trackIds': {
+        'history': [1],
+        'search_cupsize': [24974150, 2, 3]
+      },
+      'info': {
+        '24974150': {
+          'track': 'Юра, Юра',
+          'artistName': 'CUPSIZE',
+          'duration': '02:12',
+          'playbackEnabled': true,
+          'imageJpg': 'https://cdnimg.zaycev.net/cover.jpg',
+        },
+        '2': {
+          'track': 'Юра, Юра',
+          'artistName': 'CUPSIZE',
+          'duration': '00:30',
+          'playbackEnabled': false,
+        },
+        '3': {
+          'track': 'Концерт',
+          'artistName': 'Другой артист',
+          'duration': '04:00',
+          'playbackEnabled': true,
+        },
+      },
+      'status': {
+        'search_cupsize': {'pagesCount': 3}
+      }
+    };
+    final catalog = MusicCatalog(MockClient((request) async {
+      expect(request.url.host, 'zaycev.net');
+      expect(request.url.queryParameters['tracks-page'], '2');
+      final state = jsonEncode({
+        'props': {
+          'initialReduxState': {'playlist': playlist}
+        }
+      });
+      return http.Response.bytes(
+          utf8.encode(
+              '<script id="__NEXT_DATA__" type="application/json">$state</script>'),
+          200);
+    }));
+    final page = await catalog.search('CUPSIZE Юра, Юра',
+        source: CatalogSource.zaycev, offset: 1);
+    final entry = page.tracks.single;
+    expect(entry.track.title, 'Юра, Юра');
+    expect(entry.track.path, 'https://zaycev.net/pages/249741/24974150.shtml');
+    expect(CatalogPlayback.canPlayInApp(entry.track), isTrue);
+    expect(entry.duration, const Duration(seconds: 132));
+    expect(page.nextOffset, 2);
+  });
+
   test('search and charts accept audio and exclude watch pages and previews',
       () {
     bool playable(String path, {bool youtube = false}) =>

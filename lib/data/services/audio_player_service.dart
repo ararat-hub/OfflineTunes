@@ -9,10 +9,12 @@ import '../models/media_link.dart';
 import '../models/equalizer.dart';
 import 'audius_streams.dart';
 import 'music_catalog.dart';
+import 'zaycev_streams.dart';
 
 class AudioPlayerService extends ChangeNotifier {
   final Player _player;
   final AudiusStreams? audiusStreams;
+  final ZaycevStreams? zaycevStreams;
   final _resolvedMedia = <String, String>{};
   final _retriedMedia = <String>{};
   Completer<bool>? _mediaLoaded;
@@ -21,6 +23,7 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> _operations = Future.value();
   SharedPreferences? _prefs;
   List<PlaybackTrack> _queue = [];
+  List<PlaybackTrack>? _deferredQueue;
   PlaybackTrack? _current;
   bool _opened = false;
   bool _disposed = false;
@@ -42,7 +45,8 @@ class AudioPlayerService extends ChangeNotifier {
       {Player? player,
       this.onListened,
       this.requestAudioFocus,
-      this.audiusStreams})
+      this.audiusStreams,
+      this.zaycevStreams})
       : _player = player ?? Player() {
     _subscriptions.addAll([
       _player.stream.playing.listen((value) {
@@ -83,6 +87,14 @@ class AudioPlayerService extends ChangeNotifier {
         if (value) {
           _isPlaying = false;
           unawaited(_saveState());
+          final finished = _current;
+          if (_opened &&
+              _deferredQueue != null &&
+              _repeat != PlaylistMode.single) {
+            unawaited(_run(() async {
+              if (_completed && _current == finished) await _moveDeferred(1);
+            }));
+          }
         }
         _notify();
       }),
@@ -112,8 +124,9 @@ class AudioPlayerService extends ChangeNotifier {
         if (_mediaLoaded?.isCompleted == false) _mediaLoaded!.complete(false);
         final path = currentPath;
         final recovery = _opened &&
-            audiusStreams != null &&
-            AudiusStreams.trackId(path) != null &&
+            ((audiusStreams != null && AudiusStreams.trackId(path) != null) ||
+                (zaycevStreams != null &&
+                    MediaLink.zaycevTrackId(path) != null)) &&
             _retriedMedia.add(path);
         _error = 'Не удалось воспроизвести трек.';
         _isLoading = false;
@@ -232,6 +245,7 @@ class AudioPlayerService extends ChangeNotifier {
         _resolvedMedia.clear();
         _retriedMedia.clear();
         _current = tracks[index];
+        _updateDeferredQueue();
         _position = Duration.zero;
         _duration = Duration.zero;
         await _open();
@@ -264,31 +278,37 @@ class AudioPlayerService extends ChangeNotifier {
     await _validate(currentPath);
     final streams = audiusStreams;
     final path = currentPath;
-    if (streams != null && AudiusStreams.trackId(path) != null) {
+    final fromZaycev = MediaLink.zaycevTrackId(path) != null;
+    final fromAudius = streams != null && AudiusStreams.trackId(path) != null;
+    if (fromZaycev || fromAudius) {
       await _player.pause();
-      final resolved = await streams.resolve(path);
+      final resolved = fromZaycev
+          ? await zaycevStreams?.resolve(path)
+          : await streams!.resolve(path);
       if (_disposed) return;
       if (resolved == null) {
-        _error = 'Не удалось открыть полный поток Audius. Попробуйте ещё раз.';
+        _error = 'Не удалось загрузить аудиопоток. Повторите попытку.';
         return;
       }
       _resolvedMedia[path] = resolved;
     }
+    final nativeQueue = _deferredQueue == null ? _queue : [_current!];
     final loaded = _mediaLoaded = Completer<bool>();
     try {
       await _player.open(
           Playlist(
-              _queue
+              nativeQueue
                   .map((track) => Media(
                         _resolvedMedia[track.path] ?? track.path,
                         httpHeaders: Uri.tryParse(track.path)?.host ==
                                     'upload.wikimedia.org' ||
-                                AudiusStreams.trackId(track.path) != null
+                                AudiusStreams.trackId(track.path) != null ||
+                                MediaLink.zaycevTrackId(track.path) != null
                             ? const {'User-Agent': MusicCatalog.userAgent}
                             : null,
                       ))
                   .toList(),
-              index: _queue.indexOf(_current!)),
+              index: nativeQueue.indexOf(_current!)),
           play: false);
       final duration = _player.state.duration;
       if (duration > Duration.zero && !loaded.isCompleted) {
@@ -306,8 +326,8 @@ class AudioPlayerService extends ChangeNotifier {
     } finally {
       if (_mediaLoaded == loaded) _mediaLoaded = null;
     }
-    await _player.setPlaylistMode(_repeat);
-    await _player.setShuffle(_shuffle);
+    await _player.setPlaylistMode(_nativeRepeat);
+    await _player.setShuffle(_deferredQueue == null && _shuffle);
     if (savedPosition > Duration.zero) {
       // open() queues the native load; seeking before metadata arrives is lost.
       var loadedDuration = _player.state.duration;
@@ -363,21 +383,64 @@ class AudioPlayerService extends ChangeNotifier {
       });
 
   Future<void> next() => _run(() async {
-        if (_opened && hasQueue) await _player.next();
+        if (!hasQueue) return;
+        if (_deferredQueue != null) {
+          await _moveDeferred(1);
+        } else if (_opened) {
+          await _player.next();
+        }
       });
 
   Future<void> previous() => _run(() async {
         if (!_opened) return;
         if (_position > const Duration(seconds: 3) || !hasQueue) {
           await _player.seek(Duration.zero);
+        } else if (_deferredQueue != null) {
+          await _moveDeferred(-1);
         } else {
           await _player.previous();
         }
       });
 
+  // The provider's playback URLs are temporary. Keep the track pages in the
+  // app queue and resolve each one when its turn comes.
+  void _updateDeferredQueue() {
+    if (_queue.length < 2 ||
+        !_queue.any((track) => MediaLink.zaycevTrackId(track.path) != null)) {
+      _deferredQueue = null;
+    } else {
+      _deferredQueue = _shuffle
+          ? [
+              _current!,
+              ...(_queue.where((track) => track != _current).toList()
+                ..shuffle())
+            ]
+          : _queue;
+    }
+  }
+
+  Future<void> _moveDeferred(int step) async {
+    final order = _deferredQueue!;
+    final target = order.indexOf(_current!) + step;
+    if ((target < 0 || target >= order.length) &&
+        _repeat != PlaylistMode.loop) {
+      return;
+    }
+    _current = order[target % order.length];
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    await _open();
+  }
+
+  PlaylistMode get _nativeRepeat =>
+      _deferredQueue == null || _repeat == PlaylistMode.single
+          ? _repeat
+          : PlaylistMode.none;
+
   Future<void> toggleShuffle() => _run(() async {
         _shuffle = !_shuffle;
-        await _player.setShuffle(_shuffle);
+        _updateDeferredQueue();
+        await _player.setShuffle(_deferredQueue == null && _shuffle);
       });
 
   Future<void> cycleRepeat() => _run(() async {
@@ -386,7 +449,7 @@ class AudioPlayerService extends ChangeNotifier {
           PlaylistMode.loop => PlaylistMode.single,
           PlaylistMode.single => PlaylistMode.none,
         };
-        await _player.setPlaylistMode(_repeat);
+        await _player.setPlaylistMode(_nativeRepeat);
       });
 
   Future<void> setVolume(double value) => _run(() async {
@@ -438,6 +501,7 @@ class AudioPlayerService extends ChangeNotifier {
       unawaited(sub.cancel());
     }
     audiusStreams?.dispose();
+    zaycevStreams?.dispose();
     unawaited(_operations.then((_) => _player.dispose()));
     super.dispose();
   }

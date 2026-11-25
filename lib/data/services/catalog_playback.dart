@@ -39,6 +39,7 @@ class CatalogPlayback extends ChangeNotifier {
         uri.userInfo.isEmpty &&
         !MediaLink.isStorePreview(uri) &&
         (AudiusStreams.trackId(track.path) != null ||
+            MediaLink.zaycevTrackId(track.path) != null ||
             MediaLink.isDirectAudioFile(uri) ||
             uri.path.toLowerCase().endsWith('.m3u8'));
   }

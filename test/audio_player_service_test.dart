@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'package:offlinetunes/data/db/app_database.dart' show Track;
 import 'package:offlinetunes/data/models/playback_track.dart';
 import 'package:offlinetunes/data/services/audio_player_service.dart';
 import 'package:offlinetunes/data/services/catalog_playback.dart';
+import 'package:offlinetunes/data/services/zaycev_streams.dart';
 import 'package:offlinetunes/widgets/mini_player.dart';
 
 class FakePlayer extends PlatformPlayer {
@@ -26,6 +28,7 @@ class FakePlayer extends PlatformPlayer {
 
   void emitPosition(Duration value) => positionController.add(value);
   void emitError(String value) => errorController.add(value);
+  void emitComplete() => completedController.add(true);
 
   void emitMetadata() {
     state = state.copyWith(duration: const Duration(seconds: 60));
@@ -193,6 +196,49 @@ void main() {
     await opening;
     expect(service.isLoading, isFalse);
     expect(service.duration, const Duration(seconds: 60));
+  });
+
+  test(
+      'native queue resolves the guest track when reached and saves its original path',
+      () async {
+    const published = PlaybackTrack(
+        path: 'https://zaycev.net/pages/249741/24974150.shtml',
+        title: 'Юра, Юра',
+        artist: 'CUPSIZE');
+    const stream = 'https://dl.zaycev.net/music/track.mp3?signature=sample';
+    final requests = <String>[];
+    service.dispose();
+    engine = FakePlayer();
+    service = AudioPlayerService(
+        player: Player(platformPlayer: engine),
+        zaycevStreams: ZaycevStreams(MockClient((request) async {
+          requests.add(request.url.path);
+          expect(request.headers['authorization'], isNull);
+          if (request.method == 'POST') {
+            expect(jsonDecode(request.body), {
+              'trackIds': ['24974150'],
+              'subscription': false
+            });
+            return http.Response(
+                '{"tracks":[{"id":24974150,"streaming":"sample-token"}]}', 200);
+          }
+          return http.Response(jsonEncode({'url': stream}), 200);
+        })));
+    await service.playQueue([first, published]);
+    expect(requests, isEmpty);
+    engine.emitComplete();
+    await Future<void>.delayed(Duration.zero);
+    await service.setVolume(.5); // Wait for the serialized queue transition.
+
+    expect(service.currentPath, published.path);
+    expect(service.error, isNull);
+    expect(engine.opened!.medias.single.uri, stream);
+    expect(requests, [
+      '/api/external/track/filezmeta',
+      '/api/external/track/play/sample-token',
+    ]);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('player_last_path'), published.path);
   });
 
   test('native loading errors stop loading and permit another selection',
