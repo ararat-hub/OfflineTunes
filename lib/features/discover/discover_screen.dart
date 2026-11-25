@@ -8,6 +8,7 @@ import '../../core/localization.dart';
 import '../../data/db/app_database.dart';
 import '../../data/models/music_query.dart';
 import '../../data/services/listening_history.dart';
+import '../../data/services/catalog_playback.dart';
 import '../../data/services/music_catalog.dart';
 import '../../widgets/track_row.dart';
 import '../../widgets/filter_choice.dart';
@@ -42,7 +43,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   late final _catalog = MusicCatalog(_client);
   late final _library = widget.db.watchAllTracks();
   late Future<ChartResults> _popular = _catalog.popularWithCache();
-  Future<RankedSearch>? _artistResults;
+  Future<CatalogPage>? _artistResults;
 
   void _searchChart(String value) {
     _debounce?.cancel();
@@ -50,7 +51,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     setState(() => _artistResults = null);
     if (query.length < 2) return;
     _debounce = Timer(const Duration(milliseconds: 420), () {
-      setState(() => _artistResults = _catalog.searchRecordings(query));
+      setState(() => _artistResults =
+          _catalog.search(query, source: CatalogSource.audius));
     });
   }
 
@@ -151,30 +153,31 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 Expanded(
                     child: FutureBuilder<ChartResults>(
                         future: _popular,
-                        builder: (context, chart) => FutureBuilder<
-                                RankedSearch>(
+                        builder: (context, chart) => FutureBuilder<CatalogPage>(
                             future: _artistResults,
                             builder: (context, lookup) {
                               final query = MusicQuery(_chartSearch.text);
                               final searching = query.text.length >= 2;
                               final found =
                                   lookup.connectionState == ConnectionState.done
-                                      ? (lookup.data?.page.tracks ??
+                                      ? (lookup.data?.tracks ??
                                           const <CatalogTrack>[])
                                       : const <CatalogTrack>[];
                               final results = chart.connectionState ==
                                       ConnectionState.done
                                   ? chart.data?.tracks ?? const <CatalogTrack>[]
                                   : const <CatalogTrack>[];
-                              final ranked = lookup.data?.ranked == true;
                               final matches =
                                   (found.isNotEmpty ? found : results)
                                       .asMap()
                                       .entries
                                       .where((entry) =>
-                                          !searching ||
-                                          query.matches(entry.value.track.title,
-                                              entry.value.track.artist))
+                                          CatalogPlayback.canPlayInApp(
+                                              entry.value.track) &&
+                                          (!searching ||
+                                              query.matches(
+                                                  entry.value.track.title,
+                                                  entry.value.track.artist)))
                                       .toList();
                               if (matches.isEmpty) {
                                 if (chart.connectionState ==
@@ -192,7 +195,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                           context.tr(chart.hasError ||
                                                   lookup.hasError
                                               ? 'Каталог временно недоступен.'
-                                              : 'Ничего не найдено'),
+                                              : 'Записи с полным аудио не найдены.'),
                                           textAlign: TextAlign.center),
                                       if (chart.hasError || lookup.hasError)
                                         TextButton(
@@ -211,10 +214,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                               final queue = matches
                                   .map((row) => row.value.track)
                                   .toList();
-                              final playable = queue
-                                  .where(
-                                      (track) => track.externalProvider == null)
-                                  .firstOrNull;
                               final colors = Theme.of(context).colorScheme;
                               final cached =
                                   found.isEmpty && chart.data?.cached == true;
@@ -241,12 +240,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                           children: [
                                             Text(
                                                 context.tr(found.isNotEmpty
-                                                    ? ranked
-                                                        ? 'Популярные совпадения'
-                                                        : 'Найденные треки'
+                                                    ? 'Найденные треки'
                                                     : _region ==
                                                             ChartRegion.russia
-                                                        ? 'Топ треков в России'
+                                                        ? 'Русскоязычные треки'
                                                         : 'Топ треков'),
                                                 style: Theme.of(context)
                                                     .textTheme
@@ -256,14 +253,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                                             FontWeight.w700)),
                                             Text(context.tr(
                                                 found.isNotEmpty
-                                                    ? ranked
-                                                        ? 'По популярности · Deezer'
-                                                        : 'Подборка · Apple Music'
+                                                    ? 'Слушать в oTune'
                                                     : cached
                                                         ? 'Сохранённая подборка · {provider}'
-                                                        : _region == ChartRegion.russia
-                                                            ? 'Чарт · Apple Music'
-                                                            : 'По числу прослушиваний · Audius',
+                                                        : 'По числу прослушиваний · Audius',
                                                 {
                                                   'provider':
                                                       chart.data?.source ??
@@ -278,15 +271,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                             onPressed: () =>
                                                 _refresh(genre: _genre),
                                           ),
-                                        if (playable != null)
-                                          IconButton.filled(
-                                            icon: const Icon(
-                                                Icons.play_arrow_rounded),
-                                            tooltip: context
-                                                .tr('Воспроизвести подборку'),
-                                            onPressed: () => playHistoryTrack(
-                                                context, queue, playable),
-                                          ),
+                                        IconButton.filled(
+                                          icon: const Icon(
+                                              Icons.play_arrow_rounded),
+                                          tooltip: context
+                                              .tr('Воспроизвести подборку'),
+                                          onPressed: () => playAudioTracks(
+                                              context, queue, queue.first),
+                                        ),
                                       ]),
                                     );
                                   }
@@ -296,7 +288,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                                     track: row.value.track,
                                     duration: row.value.duration,
                                     playCount: row.value.plays,
-                                    onPlay: () => playHistoryTrack(
+                                    onPlay: () => playAudioTracks(
                                         context, queue, queue[index - 1]),
                                   );
                                 },
@@ -309,7 +301,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 builder: (context, snapshot) {
                   final queue = context
                       .watch<ListeningHistory>()
-                      .recommend(snapshot.data ?? []);
+                      .recommend(snapshot.data ?? [])
+                      .where(CatalogPlayback.canPlayInApp)
+                      .toList();
                   if (queue.isEmpty) {
                     return Center(
                         child: Text(
@@ -323,7 +317,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     itemBuilder: (_, index) => TrackRow(
                       track: queue[index],
                       onPlay: () =>
-                          playHistoryTrack(context, queue, queue[index]),
+                          playAudioTracks(context, queue, queue[index]),
                     ),
                   );
                 }),
@@ -339,7 +333,11 @@ class _MostPlayed extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final entries = context.watch<ListeningHistory>().mostPlayed;
+    final entries = context
+        .watch<ListeningHistory>()
+        .mostPlayed
+        .where((entry) => CatalogPlayback.canPlayInApp(entry.track))
+        .toList();
     if (entries.isEmpty) {
       return Center(
           child: Text(
@@ -354,7 +352,7 @@ class _MostPlayed extends StatelessWidget {
       itemBuilder: (context, index) => TrackRow(
         track: tracks[index],
         playCount: entries[index].count,
-        onPlay: () => playHistoryTrack(context, tracks, tracks[index]),
+        onPlay: () => playAudioTracks(context, tracks, tracks[index]),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/playback_track.dart';
+import '../models/media_link.dart';
 import '../models/equalizer.dart';
 import 'audius_streams.dart';
 import 'music_catalog.dart';
@@ -160,7 +161,8 @@ class AudioPlayerService extends ChangeNotifier {
           ((_prefs!.getDouble('player_volume') ?? 100) / 100).clamp(0.0, 1.0);
       await _player.setVolume(_volume * 100);
       final path = _prefs!.getString('player_last_path') ?? '';
-      if (path.isNotEmpty && !_isLegacyPreview(path)) {
+      final uri = Uri.tryParse(path);
+      if (path.isNotEmpty && (uri == null || !MediaLink.isStorePreview(uri))) {
         final saved = _prefs!.getString('player_last_track');
         if (saved != null) {
           try {
@@ -188,15 +190,6 @@ class AudioPlayerService extends ChangeNotifier {
       _error = 'Не удалось восстановить настройки плеера.';
     }
     _notify();
-  }
-
-  bool _isLegacyPreview(String path) {
-    final uri = Uri.tryParse(path);
-    if (uri == null) return false;
-    final host = uri.host.toLowerCase();
-    return (host.endsWith('.itunes.apple.com') ||
-            host.endsWith('.mzstatic.com')) &&
-        uri.path.toLowerCase().contains('/audiopreview');
   }
 
   // Serialize commands so a slow open cannot overwrite a later selection.

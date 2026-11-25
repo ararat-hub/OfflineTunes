@@ -31,6 +31,16 @@ final _placeholder = RegExp(r'\{(\w+)\}');
 const _translations = <String, (String, String)>{
   'Недавние': ('Recent', 'Recientes'),
   'Слушать в oTune': ('Play in oTune', 'Escuchar en oTune'),
+  'Записи с полным аудио не найдены.': (
+    'No full recordings found.',
+    'No se encontraron grabaciones completas.'
+  ),
+  'Русскоязычные треки': ('Russian-language tracks', 'Canciones en ruso'),
+  'Скопировать ссылку на источник': (
+    'Copy source link',
+    'Copiar enlace de origen'
+  ),
+  'Ссылка скопирована': ('Link copied', 'Enlace copiado'),
   'Другие записи': ('Other recordings', 'Otras grabaciones'),
   'Найти полную запись': ('Find full recording', 'Buscar grabación completa'),
   'Для этих записей oTune ищет полный поток или файл в вашей медиатеке.': (

@@ -8,6 +8,7 @@ import '../models/media_link.dart';
 import '../models/music_query.dart';
 import '../models/playback_track.dart';
 import 'audio_player_service.dart';
+import 'audius_streams.dart';
 import 'music_catalog.dart';
 
 enum CatalogPlaybackResult { started, unavailable, cancelled, failed }
@@ -24,6 +25,23 @@ class CatalogPlayback extends ChangeNotifier {
   int _selection = 0;
   bool _disposed = false;
   String? pending;
+
+  static bool canPlayInApp(PlaybackTrack track) {
+    if (track.youtube || track.externalProvider != null || track.path.isEmpty) {
+      return false;
+    }
+    final uri = Uri.tryParse(track.path);
+    if (uri == null) return false;
+    if (!uri.isScheme('http') && !uri.isScheme('https')) {
+      return uri.isScheme('file') || p.isAbsolute(track.path);
+    }
+    return uri.host.isNotEmpty &&
+        uri.userInfo.isEmpty &&
+        !MediaLink.isStorePreview(uri) &&
+        (AudiusStreams.trackId(track.path) != null ||
+            MediaLink.isDirectAudioFile(uri) ||
+            uri.path.toLowerCase().endsWith('.m3u8'));
+  }
 
   static bool needsAudioLookup(PlaybackTrack track) {
     if (track.externalProvider != null) return true;

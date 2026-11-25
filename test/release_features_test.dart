@@ -46,6 +46,24 @@ void main() {
         isTrue);
   });
 
+  test('search and charts accept audio and exclude watch pages and previews',
+      () {
+    bool playable(String path, {bool youtube = false}) =>
+        CatalogPlayback.canPlayInApp(
+            PlaybackTrack(path: path, title: '', artist: '', youtube: youtube));
+
+    expect(playable('https://api.audius.co/v1/tracks/Track42/stream'), isTrue);
+    expect(playable('https://upload.wikimedia.org/test.ogg'), isTrue);
+    expect(playable('file:///music/song.flac'), isTrue);
+    expect(playable('https://www.deezer.com/track/42'), isFalse);
+    expect(playable('https://music.apple.com/ru/album/111?i=222'), isFalse);
+    expect(playable('https://www.youtube.com/watch?v=jcrA-YE65fE'), isFalse);
+    expect(playable('https://example.com/demo.mp3', youtube: true), isFalse);
+    expect(playable('https://audio-ssl.itunes.apple.com/audiopreview/demo.m4a'),
+        isFalse);
+    expect(playable('https://cdns-preview-1.dzcdn.net/demo.mp3'), isFalse);
+  });
+
   test(
       'Audius playback recovers from an unreachable redirect using a full audio mirror',
       () async {
@@ -376,35 +394,49 @@ void main() {
         'https://is1-ssl.mzstatic.com/album.jpg');
   });
 
-  test('regional chart preserves the official order and uses storefront links',
+  test('Russian-language chart ranks playable tracks and caches them',
       () async {
+    var offline = false;
+    Map<String, Object> track(String id, String title, int plays,
+            {bool gated = false}) =>
+        {
+          'id': id,
+          'title': title,
+          'duration': 160,
+          'permalink': '/artist/$id',
+          'play_count': plays,
+          'is_streamable': true,
+          'is_stream_gated': gated,
+        };
     final catalog = MusicCatalog(MockClient((request) async {
-      expect(request.url.path, '/api/v2/ru/music/most-played/25/songs.json');
+      expect(request.url.path, '/v1/tracks/search');
+      if (offline) return http.Response('', 503);
+      final query = request.url.queryParameters['query'];
       return http.Response.bytes(
           utf8.encode(jsonEncode({
-            'feed': {
-              'results': [
-                {
-                  'name': 'Первый',
-                  'artistName': 'Исполнитель',
-                  'url': 'https://music.apple.com/ru/album/111?i=222'
-                },
-                {
-                  'name': 'Второй',
-                  'artistName': 'Другой',
-                  'url': 'https://music.apple.com/ru/album/333?i=444'
-                },
-              ]
-            }
+            'data': [
+              track('A', 'Первый', 100),
+              if (query == 'russian rap') track('B', 'Второй', 400),
+              track('C', 'English Song', 900),
+              track('D', 'Закрытый трек', 800, gated: true),
+            ],
           })),
           200);
     }));
     final result = await catalog.popularWithCache(region: ChartRegion.russia);
-    expect(result.source, 'Apple Music');
+    expect(result.source, 'Audius');
     expect(
-        result.tracks.map((entry) => entry.track.title), ['Первый', 'Второй']);
-    expect(result.tracks.first.track.externalProvider, 'Apple Music');
-    expect(result.tracks.first.plays, isNull);
+        result.tracks.map((entry) => entry.track.title), ['Второй', 'Первый']);
+    expect(result.tracks.map((entry) => entry.plays), [400, 100]);
+    expect(
+        result.tracks
+            .every((entry) => CatalogPlayback.canPlayInApp(entry.track)),
+        isTrue);
+    offline = true;
+    final cached = await catalog.popularWithCache(region: ChartRegion.russia);
+    expect(cached.cached, isTrue);
+    expect(cached.tracks.map((entry) => entry.track.path),
+        result.tracks.map((entry) => entry.track.path));
   });
 
   test('a first install has a playable global chart if the catalog is offline',

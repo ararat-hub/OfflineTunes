@@ -30,7 +30,7 @@ class MusicCatalog {
     'discoveryprovider2.audius.co',
   ];
   static const _popularCacheKey = 'audius_popular_v1';
-  static const _russiaCacheKey = 'apple_russia_popular_v1';
+  static const _russiaCacheKey = 'audius_russian_popular_v1';
 
   Future<CatalogPage> search(String query,
       {int offset = 0, CatalogSource source = CatalogSource.commons}) async {
@@ -272,7 +272,7 @@ class MusicCatalog {
       {String? genre, ChartRegion region = ChartRegion.global}) async {
     final preferences = await SharedPreferences.getInstance();
     final russia = region == ChartRegion.russia;
-    final source = russia ? 'Apple Music' : 'Audius';
+    const source = 'Audius';
     final key = russia
         ? _russiaCacheKey
         : genre == null
@@ -317,29 +317,27 @@ class MusicCatalog {
   }
 
   Future<List<CatalogTrack>> _russianChart() async {
-    final uri = Uri.https('rss.marketingtools.apple.com',
-        '/api/v2/ru/music/most-played/25/songs.json');
-    return parseRussianChart(await _request(uri));
-  }
-
-  static List<CatalogTrack> parseRussianChart(Object? payload) {
-    final feed = payload is Map ? payload['feed'] : null;
-    final data = feed is Map ? feed['results'] : null;
-    if (data is! List) throw const FormatException('Invalid Apple Music chart');
-    return [
-      for (final item in data.whereType<Map>())
-        if (item['name'] case final String name when name.isNotEmpty)
-          if (_sourceLink(item['url'], 'music.apple.com') case final String url)
-            CatalogTrack(
-                PlaybackTrack(
-                    path: url,
-                    title: name,
-                    artist: item['artistName']?.toString() ?? '',
-                    sourcePage: url,
-                    artwork: _https(item['artworkUrl100']),
-                    externalProvider: 'Apple Music'),
-                null),
-    ];
+    final pages = await Future.wait(
+        ['russian pop', 'russian rap', 'russian rock'].map((query) async {
+      try {
+        return await _audiusSearch(query, 0);
+      } on Exception {
+        return null;
+      }
+    }));
+    final cyrillic = RegExp(r'[а-яё]', caseSensitive: false);
+    final candidates = pages.nonNulls
+        .expand((page) => page.tracks)
+        .where((item) =>
+            (item.plays ?? 0) > 0 &&
+            cyrillic.hasMatch('${item.track.artist} ${item.track.title}'))
+        .toList()
+      ..sort((a, b) => b.plays!.compareTo(a.plays!));
+    final seen = <(String, String)>{};
+    return candidates
+        .where((item) => seen.add(_recordingKey(item.track)))
+        .take(30)
+        .toList();
   }
 
   static CatalogPage parseDeezerPage(Object? payload,

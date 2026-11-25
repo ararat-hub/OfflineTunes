@@ -10,6 +10,7 @@ import '../../data/db/app_database.dart';
 import '../../data/models/playback_track.dart';
 import '../../data/models/music_query.dart';
 import '../../data/services/music_catalog.dart';
+import '../../data/services/catalog_playback.dart';
 import '../../data/services/favorite_tracks.dart';
 import '../../data/services/offline_tracks.dart';
 
@@ -60,8 +61,8 @@ class _SearchScreenState extends State<SearchScreen> {
     final requests = append
         ? Map.of(_offsets)
         : {
-            if (_scope == _Scope.all)
-              for (final source in CatalogSource.values) source: 0
+            if (_scope == _Scope.all) CatalogSource.audius: 0,
+            if (_scope == _Scope.all) CatalogSource.commons: 0,
           };
     final generation = ++_generation;
     var remoteSuccesses = 0;
@@ -86,9 +87,10 @@ class _SearchScreenState extends State<SearchScreen> {
         final search = MusicQuery(query);
         final results = <String, PlaybackTrack>{
           for (final track in items.map(PlaybackTrack.fromTrack))
-            if (track.path.isNotEmpty) track.identity: track,
+            if (CatalogPlayback.canPlayInApp(track)) track.identity: track,
           for (final track in offline?.tracks ?? const <PlaybackTrack>[])
-            if (search.matches(track.title, track.artist))
+            if (CatalogPlayback.canPlayInApp(track) &&
+                search.matches(track.title, track.artist))
               track.identity: track,
         };
         setState(() => _local = results.values.toList());
@@ -108,7 +110,9 @@ class _SearchScreenState extends State<SearchScreen> {
           remoteSuccesses++;
           _online[source] = [
             ...current,
-            ...result.tracks.where((item) => known.add(item.track.path)),
+            ...result.tracks.where((item) =>
+                CatalogPlayback.canPlayInApp(item.track) &&
+                known.add(item.track.path)),
           ];
           final next = result.nextOffset;
           if (next == null || next <= offset) {
@@ -152,8 +156,9 @@ class _SearchScreenState extends State<SearchScreen> {
     final search = MusicQuery(_submitted);
     final favoriteMatches = _scope == _Scope.favorites
         ? context.watch<FavoriteTracks>().tracks.where((track) {
-            return _submitted.isEmpty ||
-                search.matches(track.title, track.artist);
+            return CatalogPlayback.canPlayInApp(track) &&
+                (_submitted.isEmpty ||
+                    search.matches(track.title, track.artist));
           }).toList()
         : const <PlaybackTrack>[];
     final emptyOnline = _online.values.every((items) => items.isEmpty);
@@ -203,7 +208,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     itemCount: favoriteMatches.length,
                     itemBuilder: (_, index) => TrackRow(
                           track: favoriteMatches[index],
-                          onPlay: () => playHistoryTrack(
+                          onPlay: () => playAudioTracks(
                               context, favoriteMatches, favoriteMatches[index]),
                         )),
               if (_scope != _Scope.favorites && _local.isNotEmpty) ...[
@@ -212,7 +217,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   itemCount: _local.length,
                   itemBuilder: (_, i) => TrackRow(
                     track: _local[i],
-                    onPlay: () => playHistoryTrack(context, _local, _local[i]),
+                    onPlay: () => playAudioTracks(context, _local, _local[i]),
                   ),
                 ),
               ],
@@ -223,12 +228,6 @@ class _SearchScreenState extends State<SearchScreen> {
                   ...?_online[CatalogSource.audius],
                   ...?_online[CatalogSource.commons],
                 ]),
-              ],
-              if (_online[CatalogSource.recordings]?.isNotEmpty == true) ...[
-                _label(context.tr('Другие записи'),
-                    subtitle: context.tr(
-                        'Для этих записей oTune ищет полный поток или файл в вашей медиатеке.')),
-                _onlineSection(context, _online[CatalogSource.recordings]!),
               ],
               if (!_loading && _catalogFailed && emptyOnline)
                 SliverToBoxAdapter(
@@ -248,7 +247,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 _label(context.tr(
                     _submitted.isEmpty && _scope != _Scope.favorites
                         ? 'Введите название трека или исполнителя...'
-                        : 'Ничего не найдено')),
+                        : 'Записи с полным аудио не найдены.')),
               if (!_loading && _offsets.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Align(
@@ -273,25 +272,17 @@ class _SearchScreenState extends State<SearchScreen> {
       itemBuilder: (_, i) => TrackRow(
         track: queue[i],
         duration: items[i].duration,
-        onPlay: () => playHistoryTrack(context, queue, queue[i]),
+        onPlay: () => playAudioTracks(context, queue, queue[i]),
       ),
     );
   }
 
-  SliverToBoxAdapter _label(String text, {String? subtitle}) =>
-      SliverToBoxAdapter(
+  SliverToBoxAdapter _label(String text) => SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(text,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-            if (subtitle != null) ...[
-              const SizedBox(height: 4),
-              Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ]),
+          child: Text(text,
+              style:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
         ),
       );
 }

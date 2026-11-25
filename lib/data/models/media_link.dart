@@ -10,6 +10,16 @@ class MediaLink {
   static bool isDirectAudioFile(Uri uri) =>
       RegExp(r'\.(mp3|flac|m4a|aac|wav|ogg|oga|opus)$', caseSensitive: false)
           .hasMatch(uri.path);
+
+  static bool isStorePreview(Uri uri) {
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+    return ((host.endsWith('.itunes.apple.com') ||
+                host.endsWith('.mzstatic.com')) &&
+            path.contains('/audiopreview')) ||
+        (host.startsWith('cdns-preview-') && host.endsWith('.dzcdn.net'));
+  }
+
   Uri get canonicalYoutubeUrl => Uri.https('www.youtube.com', '/watch',
       {'v': youtubeId!, if (startSeconds > 0) 't': '${startSeconds}s'});
 

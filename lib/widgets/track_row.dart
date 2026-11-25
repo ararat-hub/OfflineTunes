@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../core/localization.dart';
 import '../data/db/app_database.dart';
@@ -71,6 +71,20 @@ Future<void> playHistoryTrack(BuildContext context, List<PlaybackTrack> tracks,
   }
 }
 
+Future<void> playAudioTracks(BuildContext context, List<PlaybackTrack> tracks,
+    PlaybackTrack selected) async {
+  if (!CatalogPlayback.canPlayInApp(selected)) return;
+  FocusManager.instance.primaryFocus?.unfocus();
+  context.read<CatalogPlayback?>()?.cancel();
+  final audio = context.read<AudioPlayerService>();
+  final saved = context.read<OfflineTracks?>();
+  final queue = tracks.where(CatalogPlayback.canPlayInApp).toList();
+  await audio.playQueue(
+    queue.map((track) => saved?.localOrOriginal(track) ?? track).toList(),
+    index: queue.indexOf(selected),
+  );
+}
+
 Future<void> _importRecording(
     BuildContext context, PlaybackTrack recording) async {
   if (!context.mounted) return;
@@ -100,19 +114,6 @@ Future<void> _importRecording(
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(context.tr('Не удалось добавить аудиофайл.'))));
     }
-  }
-}
-
-Future<void> openTrackSource(BuildContext context, PlaybackTrack track) async {
-  final url = Uri.tryParse(track.sourcePage ?? '');
-  if (url != null &&
-      url.scheme == 'https' &&
-      await launchUrl(url, mode: LaunchMode.externalApplication)) {
-    return;
-  }
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.tr('Не удалось открыть ссылку.'))));
   }
 }
 
@@ -445,9 +446,18 @@ class TrackActions extends StatelessWidget {
                   if (track.license != null) Text(track.license!),
                   if (track.sourcePage != null)
                     TextButton.icon(
-                        onPressed: () => openTrackSource(context, track),
-                        icon: const Icon(Icons.open_in_new),
-                        label: Text(context.tr('Источник записи'))),
+                        onPressed: () async {
+                          await Clipboard.setData(
+                              ClipboardData(text: track.sourcePage!));
+                          if (dialog.mounted) {
+                            ScaffoldMessenger.of(dialog).showSnackBar(SnackBar(
+                                content:
+                                    Text(dialog.tr('Ссылка скопирована'))));
+                          }
+                        },
+                        icon: const Icon(Icons.copy_rounded),
+                        label:
+                            Text(context.tr('Скопировать ссылку на источник'))),
                 ]),
             actions: [
               TextButton(
