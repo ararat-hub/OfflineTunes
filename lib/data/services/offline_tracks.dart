@@ -12,6 +12,7 @@ import '../models/playback_track.dart';
 import '../models/media_link.dart';
 import 'music_catalog.dart';
 import 'track_artwork_store.dart';
+import 'zaycev_streams.dart';
 
 class OfflineTracks extends ChangeNotifier {
   OfflineTracks(
@@ -31,6 +32,7 @@ class OfflineTracks extends ChangeNotifier {
   }
 
   final http.Client _client;
+  late final _zaycev = ZaycevStreams(_client);
   final Future<Directory> Function() _directory;
   final Future<File?> Function(PlaybackTrack) _artwork;
   late final Future<void> ready;
@@ -125,14 +127,16 @@ class OfflineTracks extends ChangeNotifier {
     if (_initializationError != null) {
       throw StateError('Download storage is unavailable');
     }
-    final uri = Uri.tryParse(track.downloadUrl ?? '');
+    var uri = Uri.tryParse(track.downloadUrl ?? '');
+    final fromZaycev = MediaLink.zaycevTrackId(track.downloadUrl ?? '') != null;
     final catalog = uri != null &&
         const {'api.audius.co', 'upload.wikimedia.org'}.contains(uri.host);
     if (track.youtube ||
         uri == null ||
         uri.scheme != 'https' ||
         uri.userInfo.isNotEmpty ||
-        (!catalog && !MediaLink.isDirectAudioFile(uri))) {
+        (!catalog && !fromZaycev && !MediaLink.isDirectAudioFile(uri)) ||
+        MediaLink.isStorePreview(uri)) {
       throw const FormatException(
           'The link does not provide a downloadable audio file');
     }
@@ -146,6 +150,13 @@ class OfflineTracks extends ChangeNotifier {
     File? audio;
     var committed = false;
     try {
+      if (fromZaycev) {
+        final resolved = await _zaycev.resolveDownload(uri.toString());
+        if (resolved == null) {
+          throw const FormatException('The source did not permit a download');
+        }
+        uri = Uri.parse(resolved);
+      }
       final request = http.Request('GET', uri)
         ..headers['User-Agent'] = MusicCatalog.userAgent;
       final response =

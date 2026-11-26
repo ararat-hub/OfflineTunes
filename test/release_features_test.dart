@@ -80,6 +80,9 @@ void main() {
     };
     final catalog = MusicCatalog(MockClient((request) async {
       expect(request.url.host, 'zaycev.net');
+      if (request.url.path.startsWith('/api/')) {
+        return http.Response('', 503);
+      }
       expect(request.url.queryParameters['tracks-page'], '2');
       final state = jsonEncode({
         'props': {

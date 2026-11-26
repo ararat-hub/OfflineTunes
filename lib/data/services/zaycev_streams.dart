@@ -12,7 +12,12 @@ class ZaycevStreams {
   static const _timeout = Duration(seconds: 8);
   static final _streamKey = RegExp(r'^[a-zA-Z0-9_-]{6,80}$');
 
-  Future<String?> resolve(String path) async {
+  Future<String?> resolve(String path) => _resolve(path, download: false);
+
+  Future<String?> resolveDownload(String path) =>
+      _resolve(path, download: true);
+
+  Future<String?> _resolve(String path, {required bool download}) async {
     final id = MediaLink.zaycevTrackId(path);
     if (id == null) return null;
     try {
@@ -34,20 +39,25 @@ class ZaycevStreams {
       if (tracks is! List) return null;
       final track = tracks
           .whereType<Map>()
-          .where((entry) => entry['id'] == id)
+          .where((entry) => int.tryParse('${entry['id']}') == id)
           .firstOrNull;
-      final key = track?['streaming'];
+      final key = track?[download ? 'download' : 'streaming'];
       if (key is! String || !_streamKey.hasMatch(key)) return null;
-      final play = await _client.get(
-          Uri.https(MediaLink.zaycevHost, '/api/external/track/play/$key'),
+      final action = download ? 'download' : 'play';
+      final response = await _client.get(
+          Uri.https(MediaLink.zaycevHost, '/api/external/track/$action/$key'),
           headers: {'User-Agent': MusicCatalog.userAgent}).timeout(_timeout);
-      if (play.statusCode != 200) return null;
-      final data = jsonDecode(play.body);
-      final url = data is Map ? data['url'] : null;
+      if (response.statusCode != 200) return null;
+      final data = download ? null : jsonDecode(response.body);
+      final url =
+          download ? response.body.trim() : (data is Map ? data['url'] : null);
       final uri = url is String ? Uri.tryParse(url) : null;
       if (uri == null ||
           !uri.isScheme('https') ||
-          uri.host != 'dl.zaycev.net' ||
+          !(download
+              ? const {'zaycev.cdn.zerocdn.com', 'dl.zaycev.net'}
+                  .contains(uri.host)
+              : uri.host == 'dl.zaycev.net') ||
           uri.userInfo.isNotEmpty) {
         return null;
       }

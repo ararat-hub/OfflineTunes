@@ -66,7 +66,6 @@ class _SearchScreenState extends State<SearchScreen> {
             if (_scope == _Scope.all) CatalogSource.commons: 0,
           };
     final generation = ++_generation;
-    var remoteSuccesses = 0;
     setState(() {
       if (!append) {
         _local = [];
@@ -108,7 +107,6 @@ class _SearchScreenState extends State<SearchScreen> {
         final current = _online[source] ?? [];
         final known = current.map((item) => item.track.path).toSet();
         setState(() {
-          remoteSuccesses++;
           _online[source] = [
             ...current,
             ...result.tracks.where((item) =>
@@ -138,7 +136,6 @@ class _SearchScreenState extends State<SearchScreen> {
     if (mounted && generation == _generation) {
       setState(() {
         _loading = false;
-        _catalogFailed = _catalogFailed && remoteSuccesses == 0;
       });
     }
   }

@@ -66,6 +66,35 @@ class MusicCatalog {
   }
 
   Future<CatalogPage> _searchZaycev(String term, int offset) async {
+    final query = MusicQuery(term);
+    final primary = await _zaycevPage(term, offset);
+    final cyrillic = query.cyrillicVariant;
+    if (offset == 0 &&
+        primary.tracks.isEmpty &&
+        cyrillic != null &&
+        cyrillic != term) {
+      return _zaycevPage(cyrillic, offset);
+    }
+    return primary;
+  }
+
+  Future<CatalogPage> _zaycevPage(String term, int offset) async {
+    final endpoint =
+        Uri.https(MediaLink.zaycevHost, '/api/external/pages/search/tracks', {
+      'q': term,
+      'page': '${offset + 1}',
+      'limit': '50',
+    });
+    try {
+      final data =
+          await _request(endpoint, timeout: const Duration(seconds: 5));
+      if (data is! Map) throw const FormatException('Invalid Zaycev response');
+      if (data['popularInSearch'] == true) return const CatalogPage([], null);
+      return _parseZaycevPage(data['trackIds'], data['tracksInfo'],
+          data['pagesCount'], term, offset);
+    } on Exception {
+      // The public search page provides the same catalogue when the API fails.
+    }
     final uri = Uri.https(MediaLink.zaycevHost, '/search.html', {
       'query_search': term,
       'type': 'track',
@@ -90,21 +119,32 @@ class MusicCatalog {
     final initial = properties is Map ? properties['initialReduxState'] : null;
     final state = initial is Map ? initial['playlist'] : null;
     final groups = state is Map ? state['trackIds'] : null;
-    final info = state is Map ? state['info'] : null;
     final status = state is Map ? state['status'] : null;
-    if (groups is! Map || info is! Map) {
+    if (groups is! Map) {
       throw const FormatException('Invalid search data');
     }
     final key = groups.keys
         .whereType<String>()
         .where((key) => key.startsWith('search_'))
         .firstOrNull;
-    final ids = groups[key];
-    if (ids is! List) return const CatalogPage([], null);
+    if (key == null) return const CatalogPage([], null);
+    final paging = status is Map ? status[key] : null;
+    return _parseZaycevPage(groups[key], state['info'],
+        paging is Map ? paging['pagesCount'] : null, term, offset);
+  }
+
+  static CatalogPage _parseZaycevPage(
+      Object? ids, Object? info, Object? pages, String term, int offset) {
+    if (ids is! List || info is! Map) {
+      throw const FormatException('Invalid track list');
+    }
 
     final query = MusicQuery(term);
     final tracks = <CatalogTrack>[];
-    for (final id in ids.whereType<int>()) {
+    final seen = <int>{};
+    for (final value in ids) {
+      final id = int.tryParse('$value');
+      if (id == null || id <= 0 || !seen.add(id)) continue;
       final item = info['$id'];
       if (item is! Map || item['playbackEnabled'] != true) continue;
       final title = item['track'];
@@ -128,14 +168,13 @@ class MusicCatalog {
             artist: artist,
             artwork: _https(item['imageJpg']) ?? _https(item['imageWebp']),
             sourcePage: path,
+            downloadUrl: item['downloadEnabled'] == true ? path : null,
           ),
           duration));
     }
     tracks.sort((a, b) => query
         .score(b.track.title, b.track.artist)
         .compareTo(query.score(a.track.title, a.track.artist)));
-    final paging = status is Map ? status[key] : null;
-    final pages = paging is Map ? paging['pagesCount'] : null;
     return CatalogPage(
         tracks, pages is int && pages > offset + 1 ? offset + 1 : null);
   }

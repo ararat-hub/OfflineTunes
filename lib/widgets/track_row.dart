@@ -222,11 +222,14 @@ class _TrackPlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state =
-        context.select<AudioPlayerService?, (bool, bool, bool)>((audio) => (
+    final preferredPath = context.select<OfflineTracks?, String>(
+        (offline) => offline?.localOrOriginal(track).path ?? track.path);
+    final state = context
+        .select<AudioPlayerService?, (bool, bool, bool, String?)>((audio) => (
               audio?.currentTrack?.identity == track.identity,
               audio?.isPlaying ?? false,
-              audio?.isLoading ?? false
+              audio?.isLoading ?? false,
+              audio?.currentPath,
             ));
     final loading = state.$1 && state.$3;
     final playing = state.$1 && state.$2;
@@ -234,7 +237,7 @@ class _TrackPlayButton extends StatelessWidget {
         tooltip: context.tr(playing ? 'Пауза' : 'Воспроизвести'),
         onPressed: loading
             ? null
-            : state.$1
+            : playing || (state.$1 && state.$4 == preferredPath)
                 ? context.read<AudioPlayerService>().togglePlayPause
                 : onPlay,
         icon: loading
@@ -373,60 +376,78 @@ class TrackActions extends StatelessWidget {
     final downloaded = offline?.contains(identity) == true;
     final downloading = offline?.isLoading(identity) == true;
     final favorite = favorites?.contains(track) == true;
-    final canDownload = offline != null && track.downloadUrl != null;
 
-    return PopupMenuButton<String>(
-        tooltip: context.tr('О треке'),
-        icon: downloading
-            ? SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, value: offline?.progress(identity)))
-            : const Icon(Icons.more_horiz_rounded, size: 21),
-        itemBuilder: (_) => [
-              if (favorites != null)
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      if (offline != null && track.downloadUrl != null)
+        IconButton(
+          tooltip: context.tr(downloading
+              ? 'Скачивание'
+              : downloaded
+                  ? 'Скачано'
+                  : 'Скачать'),
+          visualDensity: VisualDensity.compact,
+          onPressed: downloading || downloaded
+              ? null
+              : () => _download(context, offline),
+          icon: downloading
+              ? SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, value: offline.progress(identity)))
+              : Icon(
+                  downloaded
+                      ? Icons.download_done_rounded
+                      : Icons.download_outlined,
+                  size: 21),
+        ),
+      PopupMenuButton<String>(
+          tooltip: context.tr('О треке'),
+          icon: const Icon(Icons.more_horiz_rounded, size: 21),
+          itemBuilder: (_) => [
+                if (favorites != null)
+                  PopupMenuItem(
+                      value: 'favorite',
+                      child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(favorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded),
+                          title: Text(context.tr(favorite
+                              ? 'Убрать из избранного'
+                              : 'В избранное')))),
                 PopupMenuItem(
-                    value: 'favorite',
+                    value: 'info',
                     child: ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: Icon(favorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded),
-                        title: Text(context.tr(favorite
-                            ? 'Убрать из избранного'
-                            : 'В избранное')))),
-              if (canDownload)
-                PopupMenuItem(
-                    value: 'download',
-                    enabled: !downloaded && !downloading,
-                    child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(downloaded
-                            ? Icons.download_done_rounded
-                            : Icons.download_rounded),
-                        title: Text(
-                            context.tr(downloaded ? 'Скачано' : 'Скачать')))),
-              PopupMenuItem(
-                  value: 'info',
-                  child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.info_outline_rounded),
-                      title: Text(context.tr('О треке')))),
-            ],
-        onSelected: (action) async {
-          try {
-            if (action == 'favorite') await favorites?.toggle(track);
-            if (action == 'download') await offline?.download(track);
-            if (action == 'info' && context.mounted) _details(context);
-          } catch (_) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(context.tr(action == 'download'
-                      ? 'Не удалось скачать трек.'
-                      : 'Не удалось сохранить настройки.'))));
+                        leading: const Icon(Icons.info_outline_rounded),
+                        title: Text(context.tr('О треке')))),
+              ],
+          onSelected: (action) async {
+            try {
+              if (action == 'favorite') await favorites?.toggle(track);
+              if (action == 'info' && context.mounted) _details(context);
+            } catch (_) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content:
+                        Text(context.tr('Не удалось сохранить настройки.'))));
+              }
             }
-          }
-        });
+          }),
+    ]);
+  }
+
+  Future<void> _download(BuildContext context, OfflineTracks offline) async {
+    var message = 'Скачано';
+    try {
+      await offline.download(track);
+    } catch (_) {
+      message = 'Не удалось скачать трек.';
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.tr(message))));
+    }
   }
 
   void _details(BuildContext context) => showDialog<void>(
